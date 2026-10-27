@@ -22,6 +22,35 @@ export function generateId() {
       });
 }
 
+// Helpers for DR-02: Convert between "DD-MM-YYYY" (stored) and "YYYY-MM-DD" (HTML date input)
+export function getTodayDDMMYYYY() {
+  const today = new Date();
+  const dd = String(today.getDate()).padStart(2, '0');
+  const mm = String(today.getMonth() + 1).padStart(2, '0');
+  const yyyy = today.getFullYear();
+  return `${dd}-${mm}-${yyyy}`;
+}
+
+export function toInputDate(ddmmyyyy) {
+  if (!ddmmyyyy) return '';
+  const parts = ddmmyyyy.split('-');
+  if (parts.length !== 3) return '';
+  // If already YYYY-MM-DD, return as is
+  if (parts[0].length === 4) return ddmmyyyy;
+  const [dd, mm, yyyy] = parts;
+  return `${yyyy}-${mm}-${dd}`;
+}
+
+export function toDisplayDate(yyyymmdd) {
+  if (!yyyymmdd) return '';
+  const parts = yyyymmdd.split('-');
+  if (parts.length !== 3) return '';
+  // If already DD-MM-YYYY, return as is
+  if (parts[2].length === 4) return yyyymmdd;
+  const [yyyy, mm, dd] = parts;
+  return `${dd}-${mm}-${yyyy}`;
+}
+
 // DR-06: mockTasks array pre-populated using DR-01 (UUID) & DR-02 ("DD-MM-YYYY")
 export const mockTasks = [
   {
@@ -89,13 +118,113 @@ export function useLocalStorage(key, initialValue) {
 }
 
 export default function App() {
-  // M4 data-model: initialize from localStorage or fall back to DR-06 mockTasks
+  // M4 data-model
   const [tasks, setTasks] = useLocalStorage('vibetracker.tasks', mockTasks);
+
+  // M5 crud-modal state
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [editingTask, setEditingTask] = useState(null);
+  const [formData, setFormData] = useState({
+    title: '',
+    description: '',
+    type: 'feature',
+    status: 'todo',
+    assignee: TEAM[0],
+    dueDate: '',
+    createdDate: '',
+  });
+
+  // Open modal for creating a new task
+  const handleOpenNewModal = () => {
+    setEditingTask(null);
+    setFormData({
+      title: '',
+      description: '',
+      type: 'feature',
+      status: 'todo',
+      assignee: TEAM[0],
+      dueDate: toInputDate(getTodayDDMMYYYY()),
+      createdDate: getTodayDDMMYYYY(),
+    });
+    setIsModalOpen(true);
+  };
+
+  // Open modal in edit mode when clicking a card (FR-02)
+  const handleOpenEditModal = (task) => {
+    setEditingTask(task);
+    setFormData({
+      title: task.title,
+      description: task.description || '',
+      type: task.type,
+      status: task.status,
+      assignee: task.assignee,
+      dueDate: toInputDate(task.dueDate),
+      createdDate: task.createdDate || getTodayDDMMYYYY(),
+    });
+    setIsModalOpen(true);
+  };
+
+  const handleCloseModal = () => {
+    setIsModalOpen(false);
+    setEditingTask(null);
+  };
+
+  // Save new or updated task (FR-02, DR-01, DR-02, NFR-01)
+  const handleSaveTask = (e) => {
+    e.preventDefault();
+    if (!formData.title.trim()) return;
+
+    const formattedDueDate = formData.dueDate ? toDisplayDate(formData.dueDate) : '';
+
+    if (editingTask) {
+      // Update existing task
+      setTasks((prev) =>
+        prev.map((t) =>
+          t.id === editingTask.id
+            ? {
+                ...t,
+                title: formData.title.trim(),
+                description: formData.description.trim(),
+                type: formData.type,
+                status: formData.status,
+                assignee: formData.assignee,
+                dueDate: formattedDueDate,
+              }
+            : t
+        )
+      );
+    } else {
+      // Create new task with UUID (DR-01) and DD-MM-YYYY dates (DR-02)
+      const newTask = {
+        id: generateId(),
+        title: formData.title.trim(),
+        description: formData.description.trim(),
+        type: formData.type,
+        status: formData.status,
+        assignee: formData.assignee,
+        createdDate: formData.createdDate || getTodayDDMMYYYY(),
+        dueDate: formattedDueDate,
+      };
+      setTasks((prev) => [...prev, newTask]);
+    }
+
+    handleCloseModal();
+  };
+
+  // Delete task with DESIGN.md §5 confirmation microcopy
+  const handleDeleteTask = () => {
+    if (!editingTask) return;
+    const confirmed = window.confirm("Delete this task? You can't undo this.");
+    if (confirmed) {
+      setTasks((prev) => prev.filter((t) => t.id !== editingTask.id));
+      handleCloseModal();
+    }
+  };
 
   return (
     <div className="min-h-screen w-full overflow-x-hidden bg-surface-page px-4 py-5 text-text-primary font-sans">
       <div className="mx-auto max-w-[1280px]">
-        {/* Header (DESIGN.md §6 wordmark style) */}
+        {/* Header (DESIGN.md §6 wordmark style + M5 "+ New Task" button) */}
         <header className="mb-6 flex items-end justify-between border-b border-zinc-800 pb-4">
           <div>
             <h1 className="font-heading text-[24px] font-semibold text-brand-primary">
@@ -105,12 +234,20 @@ export default function App() {
               Team starter
             </p>
           </div>
-          {/* TODO M5 crud-modal: "+ New Task" button goes here */}
+
+          {/* M5 crud-modal button (DESIGN.md §4 & §5: solid fill, "+ New Task") */}
+          <button
+            type="button"
+            onClick={handleOpenNewModal}
+            className="rounded-md bg-brand-primary px-4 py-2 text-[14px] font-medium text-text-primary transition hover:bg-brand-accent hover:text-surface-page focus:outline-none focus:ring-2 focus:ring-brand-primary"
+          >
+            + New Task
+          </button>
         </header>
 
         {/* TODO M11 anchors: Anchor Banner (FR-08) goes here */}
 
-        {/* M4 data-model (FR-01 & NFR-06): 4-column board fitting <= 1280px without horizontal scroll */}
+        {/* M4 data-model (FR-01 & NFR-06): 4-column board */}
         <main className="grid grid-cols-4 gap-3">
           {STAGES.map((stage) => {
             const columnTasks = tasks.filter((task) => task.status === stage.id);
@@ -120,7 +257,7 @@ export default function App() {
                 key={stage.id}
                 className="flex min-h-[520px] min-w-0 flex-col rounded-lg border border-zinc-800 bg-zinc-900/50 p-3"
               >
-                {/* Column Header (DESIGN.md §3: 16px semibold uppercase) */}
+                {/* Column Header */}
                 <div className="mb-3 flex items-center justify-between border-b border-zinc-800/80 pb-2">
                   <h2 className="truncate font-heading text-[16px] font-semibold uppercase tracking-wide text-text-primary">
                     {stage.label}
@@ -133,7 +270,6 @@ export default function App() {
                 {/* Task Cards */}
                 <div className="flex flex-1 flex-col gap-2.5">
                   {columnTasks.length === 0 ? (
-                    /* DESIGN.md §4 & §5: Empty state with dashed border and exact microcopy */
                     <div className="flex flex-1 items-center justify-center rounded-md border border-dashed border-zinc-800 p-4 text-center text-[12px] text-text-muted">
                       No tasks here yet.
                     </div>
@@ -141,9 +277,10 @@ export default function App() {
                     columnTasks.map((task) => (
                       <article
                         key={task.id}
-                        className="flex flex-col justify-between rounded-md border border-zinc-800 bg-surface-card p-3 transition hover:border-zinc-700"
+                        onClick={() => handleOpenEditModal(task)}
+                        className="cursor-pointer flex flex-col justify-between rounded-md border border-zinc-800 bg-surface-card p-3 transition hover:border-brand-accent"
                       >
-                        {/* Card Top: Shortened UUID display + plain type label (M6 adds color/icons next) */}
+                        {/* Card Top: Shortened UUID + plain type label (M6 adds color/icons next) */}
                         <div className="mb-1.5 flex items-center justify-between gap-2">
                           <span
                             title={task.id}
@@ -156,7 +293,7 @@ export default function App() {
                           </span>
                         </div>
 
-                        {/* Card Title & Description (DESIGN.md §3: 14px medium title) */}
+                        {/* Card Title & Description */}
                         <div className="mb-3">
                           <h3 className="text-[14px] font-medium leading-snug text-text-primary">
                             {task.title}
@@ -168,7 +305,7 @@ export default function App() {
                           )}
                         </div>
 
-                        {/* Card Footer: Assignee (DR-03) + Due Date in DD-MM-YYYY (DR-02) */}
+                        {/* Card Footer: Assignee + Due Date */}
                         <div className="flex items-center justify-between border-t border-zinc-800/80 pt-2 text-[12px] text-text-muted">
                           <span className="truncate font-medium text-text-primary">
                             {task.assignee}
@@ -188,6 +325,188 @@ export default function App() {
           })}
         </main>
       </div>
+
+      {/* M5 crud-modal (FR-02 & DESIGN.md §4: Centered dark box with dark dimmed background) */}
+      {isModalOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4"
+          onClick={handleCloseModal}
+        >
+          <div
+            className="w-full max-w-lg rounded-lg border border-zinc-800 bg-surface-card p-6 text-text-primary shadow-xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="mb-4 flex items-center justify-between border-b border-zinc-800 pb-3">
+              <div>
+                <h2 className="font-heading text-[18px] font-semibold text-text-primary">
+                  {editingTask ? 'Task Details' : 'New Task'}
+                </h2>
+                {editingTask && (
+                  <p className="font-mono text-[11px] text-text-muted">
+                    ID: {editingTask.id}
+                  </p>
+                )}
+              </div>
+              <button
+                type="button"
+                onClick={handleCloseModal}
+                className="rounded px-2 py-1 text-text-muted hover:bg-zinc-800 hover:text-text-primary"
+                aria-label="Close modal"
+              >
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveTask} className="space-y-4">
+              {/* Task Title */}
+              <div>
+                <label className="mb-1 block text-[12px] font-medium text-text-muted">
+                  Task Title *
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={formData.title}
+                  onChange={(e) =>
+                    setFormData({ ...formData, title: e.target.value })
+                  }
+                  placeholder="e.g., Implement User Authentication"
+                  className="w-full rounded-md border border-zinc-700 bg-surface-page px-3 py-2 text-[14px] text-text-primary placeholder-zinc-600 focus:border-brand-primary focus:outline-none focus:ring-1 focus:ring-brand-primary"
+                />
+              </div>
+
+              {/* Description */}
+              <div>
+                <label className="mb-1 block text-[12px] font-medium text-text-muted">
+                  Description
+                </label>
+                <textarea
+                  rows={3}
+                  value={formData.description}
+                  onChange={(e) =>
+                    setFormData({ ...formData, description: e.target.value })
+                  }
+                  placeholder="Describe the task scope or bug reproduction steps..."
+                  className="w-full rounded-md border border-zinc-700 bg-surface-page px-3 py-2 text-[14px] text-text-primary placeholder-zinc-600 focus:border-brand-primary focus:outline-none focus:ring-1 focus:ring-brand-primary"
+                />
+              </div>
+
+              {/* Type & Status Dropdowns */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="mb-1 block text-[12px] font-medium text-text-muted">
+                    Type
+                  </label>
+                  <select
+                    value={formData.type}
+                    onChange={(e) =>
+                      setFormData({ ...formData, type: e.target.value })
+                    }
+                    className="w-full rounded-md border border-zinc-700 bg-surface-page px-3 py-2 text-[14px] text-text-primary focus:border-brand-primary focus:outline-none focus:ring-1 focus:ring-brand-primary"
+                  >
+                    <option value="feature">Feature</option>
+                    <option value="bug">Bug</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="mb-1 block text-[12px] font-medium text-text-muted">
+                    Status
+                  </label>
+                  <select
+                    value={formData.status}
+                    onChange={(e) =>
+                      setFormData({ ...formData, status: e.target.value })
+                    }
+                    className="w-full rounded-md border border-zinc-700 bg-surface-page px-3 py-2 text-[14px] text-text-primary focus:border-brand-primary focus:outline-none focus:ring-1 focus:ring-brand-primary"
+                  >
+                    {STAGES.map((stage) => (
+                      <option key={stage.id} value={stage.id}>
+                        {stage.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              {/* Assignee (DR-03) & Due Date (DR-02) */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="mb-1 block text-[12px] font-medium text-text-muted">
+                    Assignee
+                  </label>
+                  <select
+                    value={formData.assignee}
+                    onChange={(e) =>
+                      setFormData({ ...formData, assignee: e.target.value })
+                    }
+                    className="w-full rounded-md border border-zinc-700 bg-surface-page px-3 py-2 text-[14px] text-text-primary focus:border-brand-primary focus:outline-none focus:ring-1 focus:ring-brand-primary"
+                  >
+                    {TEAM.map((member) => (
+                      <option key={member} value={member}>
+                        {member}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="mb-1 block text-[12px] font-medium text-text-muted">
+                    Due Date (DD-MM-YYYY)
+                  </label>
+                  <input
+                    type="date"
+                    value={formData.dueDate}
+                    onChange={(e) =>
+                      setFormData({ ...formData, dueDate: e.target.value })
+                    }
+                    className="w-full rounded-md border border-zinc-700 bg-surface-page px-3 py-2 font-mono text-[13px] text-text-primary focus:border-brand-primary focus:outline-none focus:ring-1 focus:ring-brand-primary"
+                  />
+                </div>
+              </div>
+
+              {/* Created Date Read-only Display (DR-02) */}
+              <div className="flex items-center justify-between pt-1 font-mono text-[11px] text-text-muted">
+                <span>Created Date: {formData.createdDate}</span>
+                {formData.dueDate && (
+                  <span>Stored Due Date: {toDisplayDate(formData.dueDate)}</span>
+                )}
+              </div>
+
+              {/* Modal Footer Buttons */}
+              <div className="mt-6 flex items-center justify-between border-t border-zinc-800 pt-4">
+                {editingTask ? (
+                  <button
+                    type="button"
+                    onClick={handleDeleteTask}
+                    className="rounded-md bg-due-overdue/20 border border-due-overdue/50 px-3 py-2 text-[13px] font-medium text-due-overdue transition hover:bg-due-overdue hover:text-surface-page"
+                  >
+                    Delete Task
+                  </button>
+                ) : (
+                  <div />
+                )}
+
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={handleCloseModal}
+                    className="rounded-md border border-zinc-700 bg-surface-page px-4 py-2 text-[13px] font-medium text-text-muted transition hover:border-zinc-500 hover:text-text-primary"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className="rounded-md bg-brand-primary px-4 py-2 text-[13px] font-medium text-text-primary transition hover:bg-brand-accent hover:text-surface-page"
+                  >
+                    {editingTask ? 'Save Changes' : 'Create Task'}
+                  </button>
+                </div>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
