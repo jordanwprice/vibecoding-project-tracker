@@ -145,7 +145,7 @@ Fill in:
 
 - **Team name:** `<Team JORDAN>`
 - **Tagline (one sentence):** `<All you need is Jordan>`
-- **Tracker URL after deploy:** `<TODO>` (Vercel will give it to you)
+- **Tracker URL after deploy:** `<https://vibecoding-project-tracker-beige.vercel.app/>` (Vercel will give it to you)
 
 ## 12. Out of scope (do not build)
 
