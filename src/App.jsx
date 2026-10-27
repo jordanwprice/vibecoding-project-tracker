@@ -464,10 +464,10 @@ Build the core 4-column Kanban board with localStorage persistence and M9 prompt
 - Fit all 4 columns within 1280px desktop viewport (NFR-06)
 
 **Tried so far**
-Implemented M4 board, M5 CRUD modal, M6 feature/bug styling, M7 task handoff, M8 due-tint, M9/M10 context flow, and M11 Deliverable Anchor Board.
+Implemented M4-M11 milestones plus M12 drag-and-drop and search/filter bar.
 
 **Pick up**
-Implement M12 Secret Sauce (drag-and-drop across columns FR-09 + search and filter bar FR-10).`,
+Ready for M13 pitch and final report screenshots.`,
     contextTool: 'Cursor',
     contextUpdatedAt: new Date(Date.now() - 45 * 60 * 1000).toISOString(),
   },
@@ -493,7 +493,7 @@ Long task titles or UUID strings were stretching flex items inside the 4-column 
 Added min-w-0 and truncate classes to column headers and card footers.
 
 **Pick up**
-Verify layout stability with Anchor Banner (M11) and Search/Filter bar (FR-10).`,
+Verified layout stability with Anchor Banner (M11) and Search/Filter bar (FR-10).`,
     contextTool: 'ChatGPT',
     contextUpdatedAt: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
   },
@@ -520,7 +520,7 @@ Users need a single modal to create, edit, and delete tasks along with embedded 
 Added form fields for title, description, type, status, assignee, due date, M9 context, and M10 Copy Context button.
 
 **Pick up**
-Test pasting the formatted Markdown block directly into Claude or ChatGPT.`,
+Test dragging cards across columns or filtering via the FR-10 search bar.`,
     contextTool: 'Lovable',
     contextUpdatedAt: new Date(Date.now() - 15 * 60 * 1000).toISOString(),
   },
@@ -591,6 +591,15 @@ export default function App() {
     INITIAL_DELIVERABLES
   );
 
+  // M12 secret-sauce: Search & Filter state (FR-10, DR-06, NFR-02)
+  const [searchQuery, setSearchQuery] = useState('');
+  const [typeFilter, setTypeFilter] = useState('all'); // 'all' | 'feature' | 'bug'
+  const [myTasksOnly, setMyTasksOnly] = useState(false);
+
+  // M12 secret-sauce: HTML5 Drag-and-Drop state (FR-09, DESIGN.md §4)
+  const [draggedTaskId, setDraggedTaskId] = useState(null);
+  const [dragOverStageId, setDragOverStageId] = useState(null);
+
   // Update URL and boolean statusDot automatically on change (DR-05)
   const handleDeliverableChange = (deliverableType, newUrl) => {
     const hasLink = Boolean(newUrl && newUrl.trim().length > 0);
@@ -607,7 +616,7 @@ export default function App() {
     );
   };
 
-  // M7 & M10 toast + copied feedback state
+  // M7, M10 & M12 toast + copied feedback state
   const [toastMessage, setToastMessage] = useState(null);
   const [copiedTaskId, setCopiedTaskId] = useState(null);
 
@@ -634,6 +643,84 @@ export default function App() {
     setCopiedTaskId(sourceKey || taskLike.id || 'modal');
     triggerToast('Copied. Paste it into your AI.');
   };
+
+  // M12 Drag-and-Drop Handlers (FR-09)
+  const handleDragStart = (e, taskId) => {
+    setDraggedTaskId(taskId);
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', taskId);
+  };
+
+  const handleDragEnd = () => {
+    setDraggedTaskId(null);
+    setDragOverStageId(null);
+  };
+
+  const handleColumnDragOver = (e, stageId) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    if (dragOverStageId !== stageId) {
+      setDragOverStageId(stageId);
+    }
+  };
+
+  const handleColumnDragLeave = (stageId) => {
+    if (dragOverStageId === stageId) {
+      setDragOverStageId(null);
+    }
+  };
+
+  const handleColumnDrop = (e, targetStageId) => {
+    e.preventDefault();
+    const taskId = draggedTaskId || e.dataTransfer.getData('text/plain');
+    setDraggedTaskId(null);
+    setDragOverStageId(null);
+
+    if (!taskId) return;
+    const targetTask = tasks.find((t) => t.id === taskId);
+    if (!targetTask || targetTask.status === targetStageId) return;
+
+    const stageLabel =
+      STAGES.find((s) => s.id === targetStageId)?.label || targetStageId;
+
+    setTasks((prev) =>
+      prev.map((t) =>
+        t.id === taskId ? { ...t, status: targetStageId } : t
+      )
+    );
+    triggerToast(`Moved to ${stageLabel}.`);
+  };
+
+  // M12 Filtered tasks calculation (< 100ms response, FR-10, DR-06, NFR-02)
+  const normalizedQuery = searchQuery.trim().toLowerCase();
+  const filteredTasks = tasks.filter((task) => {
+    if (typeFilter !== 'all' && task.type !== typeFilter) {
+      return false;
+    }
+    if (myTasksOnly && task.assignee !== TEAM[0]) {
+      return false;
+    }
+    if (normalizedQuery) {
+      const haystack = [
+        task.title,
+        task.description,
+        task.id,
+        task.assignee,
+        task.contextTool,
+        task.context,
+      ]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase();
+      if (!haystack.includes(normalizedQuery)) {
+        return false;
+      }
+    }
+    return true;
+  });
+
+  const hasActiveFilters =
+    normalizedQuery.length > 0 || typeFilter !== 'all' || myTasksOnly;
 
   // M5 crud-modal + M9 task-context state
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -810,7 +897,7 @@ export default function App() {
       }}
       className="min-h-screen w-full overflow-x-hidden px-4 py-5"
     >
-      {/* M7 & M10 Toast Notification (FR-04, FR-07, NFR-05) */}
+      {/* M7, M10 & M12 Toast Notification (FR-04, FR-07, FR-09, NFR-05) */}
       {toastMessage && (
         <div
           role="status"
@@ -961,7 +1048,7 @@ export default function App() {
         {/* M11 project-deliverables: Deliverable Anchor Banner (FR-08, DR-05, NFR-01, NFR-03) */}
         <section
           aria-label="Deliverable Anchor Board"
-          className="mb-5 grid grid-cols-4 gap-3"
+          className="mb-4 grid grid-cols-4 gap-3"
         >
           {deliverables.map((item) => {
             const isLinked = Boolean(item.url && item.url.trim().length > 0);
@@ -1059,15 +1146,168 @@ export default function App() {
           })}
         </section>
 
-        {/* M4 data-model (FR-01 & NFR-06): 4-column board */}
+        {/* M12 secret-sauce: Search & Filter Toolbar (FR-10, DR-06, NFR-02) */}
+        <section
+          aria-label="Board Search and Filters"
+          style={{ backgroundColor: THEME.surfaceCard }}
+          className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-md border border-zinc-800 px-3.5 py-2.5"
+        >
+          {/* Search Input (DR-06 searchQuery) */}
+          <div className="relative flex min-w-[240px] flex-1 items-center">
+            <svg
+              className="pointer-events-none absolute left-3 h-3.5 w-3.5 text-zinc-400"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden="true"
+            >
+              <circle cx="11" cy="11" r="8" />
+              <path d="m21 21-4.3-4.3" />
+            </svg>
+            <input
+              type="search"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search tasks, IDs, AI tools, or prompt context..."
+              aria-label="Search tasks"
+              style={{
+                backgroundColor: THEME.surfacePage,
+                color: THEME.textPrimary,
+              }}
+              className="w-full rounded border border-zinc-700/90 py-1.5 pl-8 pr-3 text-[12px] placeholder-zinc-500 focus:border-cyan-400 focus:outline-none"
+            />
+          </div>
+
+          {/* Type Filter Pills (DR-06 typeFilter: all | feature | bug) + My Tasks Toggle (myTasksOnly) */}
+          <div className="flex flex-wrap items-center gap-2">
+            <div
+              role="group"
+              aria-label="Filter by task type"
+              style={{
+                backgroundColor: THEME.surfacePage,
+                fontFamily: "'JetBrains Mono', monospace",
+              }}
+              className="inline-flex items-center rounded border border-zinc-800 p-0.5 text-[11px]"
+            >
+              <button
+                type="button"
+                onClick={() => setTypeFilter('all')}
+                style={{
+                  backgroundColor:
+                    typeFilter === 'all' ? THEME.brandPrimary : 'transparent',
+                  color:
+                    typeFilter === 'all' ? THEME.textPrimary : THEME.textMuted,
+                }}
+                className="rounded px-2.5 py-1 font-medium transition"
+              >
+                All ({tasks.length})
+              </button>
+              <button
+                type="button"
+                onClick={() => setTypeFilter('feature')}
+                style={{
+                  backgroundColor:
+                    typeFilter === 'feature'
+                      ? `${THEME.typeFeature}25`
+                      : 'transparent',
+                  color:
+                    typeFilter === 'feature'
+                      ? THEME.typeFeature
+                      : THEME.textMuted,
+                }}
+                className="inline-flex items-center gap-1 rounded px-2.5 py-1 font-medium transition"
+              >
+                <TypeIcon type="feature" className="h-3 w-3" />
+                Features
+              </button>
+              <button
+                type="button"
+                onClick={() => setTypeFilter('bug')}
+                style={{
+                  backgroundColor:
+                    typeFilter === 'bug' ? `${THEME.typeBug}25` : 'transparent',
+                  color: typeFilter === 'bug' ? THEME.typeBug : THEME.textMuted,
+                }}
+                className="inline-flex items-center gap-1 rounded px-2.5 py-1 font-medium transition"
+              >
+                <TypeIcon type="bug" className="h-3 w-3" />
+                Bugs
+              </button>
+            </div>
+
+            {/* My Tasks Only Toggle (FR-10 & DR-06 myTasksOnly) */}
+            <button
+              type="button"
+              onClick={() => setMyTasksOnly((prev) => !prev)}
+              aria-pressed={myTasksOnly}
+              style={{
+                backgroundColor: myTasksOnly
+                  ? `${THEME.brandAccent}22`
+                  : THEME.surfacePage,
+                color: myTasksOnly ? THEME.brandAccent : THEME.textMuted,
+                borderColor: myTasksOnly ? THEME.brandAccent : '#3F3F46',
+                fontFamily: "'JetBrains Mono', monospace",
+              }}
+              className="inline-flex items-center gap-1.5 rounded border px-3 py-1.5 text-[11px] font-medium transition hover:border-cyan-400 hover:text-white"
+            >
+              <span
+                style={{
+                  backgroundColor: myTasksOnly
+                    ? THEME.brandAccent
+                    : 'transparent',
+                  borderColor: myTasksOnly
+                    ? THEME.brandAccent
+                    : THEME.textMuted,
+                }}
+                className="inline-block h-2 w-2 rounded-full border"
+              />
+              My Tasks Only ({TEAM[0]})
+            </button>
+
+            {hasActiveFilters && (
+              <button
+                type="button"
+                onClick={() => {
+                  setSearchQuery('');
+                  setTypeFilter('all');
+                  setMyTasksOnly(false);
+                }}
+                style={{
+                  color: THEME.textMuted,
+                  fontFamily: "'JetBrains Mono', monospace",
+                }}
+                className="rounded border border-zinc-700 px-2.5 py-1.5 text-[11px] hover:border-zinc-500 hover:text-white"
+              >
+                Reset ({filteredTasks.length}/{tasks.length})
+              </button>
+            )}
+          </div>
+        </section>
+
+        {/* M4 data-model & M12 Drag-and-Drop (FR-01, FR-09 & NFR-06): 4-column board */}
         <main className="grid grid-cols-4 gap-3">
           {STAGES.map((stage) => {
-            const columnTasks = tasks.filter((task) => task.status === stage.id);
+            const columnTasks = filteredTasks.filter(
+              (task) => task.status === stage.id
+            );
+            const isDropTarget = dragOverStageId === stage.id;
 
             return (
               <section
                 key={stage.id}
-                className="flex min-h-[520px] min-w-0 flex-col rounded-lg border border-zinc-800 bg-zinc-900/50 p-3"
+                onDragOver={(e) => handleColumnDragOver(e, stage.id)}
+                onDragLeave={() => handleColumnDragLeave(stage.id)}
+                onDrop={(e) => handleColumnDrop(e, stage.id)}
+                style={{
+                  borderColor: isDropTarget ? THEME.brandAccent : '#27272A',
+                  backgroundColor: isDropTarget
+                    ? 'rgba(34, 211, 238, 0.06)'
+                    : 'rgba(24, 24, 27, 0.5)',
+                }}
+                className="flex min-h-[520px] min-w-0 flex-col rounded-lg border p-3 transition-colors"
               >
                 {/* Column Header */}
                 <div className="mb-3 flex items-center justify-between border-b border-zinc-800/80 pb-2">
@@ -1093,10 +1333,15 @@ export default function App() {
                 <div className="flex flex-1 flex-col gap-2.5">
                   {columnTasks.length === 0 ? (
                     <div
-                      style={{ color: THEME.textMuted }}
-                      className="flex flex-1 items-center justify-center rounded-md border border-dashed border-zinc-800 p-4 text-center text-[12px]"
+                      style={{
+                        color: THEME.textMuted,
+                        borderColor: isDropTarget ? THEME.brandAccent : '#27272A',
+                      }}
+                      className="flex flex-1 items-center justify-center rounded-md border border-dashed p-4 text-center text-[12px]"
                     >
-                      No tasks here yet.
+                      {isDropTarget
+                        ? `Drop card into ${stage.label}`
+                        : 'No tasks here yet.'}
                     </div>
                   ) : (
                     columnTasks.map((task) => {
@@ -1105,6 +1350,7 @@ export default function App() {
                       const avatarBg = getAvatarColor(task.assignee);
                       const creatorName = task.creator || task.assignee || TEAM[0];
                       const isCardCopied = copiedTaskId === task.id;
+                      const isBeingDragged = draggedTaskId === task.id;
 
                       // M8 due-tint calculation (FR-05 & DESIGN.md §2 / §4)
                       const urgency = getDueUrgency(task);
@@ -1112,6 +1358,9 @@ export default function App() {
                       return (
                         <article
                           key={task.id}
+                          draggable
+                          onDragStart={(e) => handleDragStart(e, task.id)}
+                          onDragEnd={handleDragEnd}
                           onClick={() => handleOpenEditModal(task)}
                           style={{
                             backgroundColor: THEME.surfaceCard,
@@ -1122,9 +1371,14 @@ export default function App() {
                                 : urgency.key === 'warning'
                                 ? `0 0 12px -3px ${THEME.dueWarning}44`
                                 : 'none',
-                            opacity: task.status === 'done' ? 0.82 : 1,
+                            opacity: isBeingDragged
+                              ? 0.45
+                              : task.status === 'done'
+                              ? 0.82
+                              : 1,
                           }}
-                          className="group relative flex cursor-pointer flex-col justify-between overflow-hidden rounded-md border p-3 pl-4 transition hover:brightness-110"
+                          title="Click to edit task or drag across columns (FR-09)"
+                          className="group relative flex cursor-grab active:cursor-grabbing flex-col justify-between overflow-hidden rounded-md border p-3 pl-4 transition hover:brightness-110"
                         >
                           {/* DESIGN.md §4: Bright red top stripe when overdue */}
                           {urgency.isOverdue && (
@@ -1145,16 +1399,19 @@ export default function App() {
                             aria-hidden="true"
                           />
 
-                          {/* Card Top: Shortened UUID + M10 Copy Context Pill (Slide 15) + M6 Type Badge */}
+                          {/* Card Top: Drag Grip + Shortened UUID + M10 Copy Context Pill + M6 Type Badge */}
                           <div className="mb-2 flex items-center justify-between gap-1.5">
                             <span
-                              title={task.id}
+                              title={`Task ID: ${task.id} (Drag to move)`}
                               style={{
                                 color: THEME.textMuted,
                                 fontFamily: "'JetBrains Mono', monospace",
                               }}
-                              className="truncate text-[11px]"
+                              className="inline-flex items-center gap-1 truncate text-[11px]"
                             >
+                              <span aria-hidden="true" className="opacity-60">
+                                ⋮⋮
+                              </span>
                               #{task.id.slice(0, 6)}
                             </span>
 
@@ -1600,7 +1857,7 @@ export default function App() {
                     </label>
                   </div>
 
-                  {/* M9 Preview + M10 Copy Context Button with Popover Toast (Slide 15) */}
+                  {/* M9 Preview + M10 Copy Context Button with Popover Toast */}
                   <div className="relative flex items-center gap-2">
                     <button
                       type="button"
