@@ -14,6 +14,38 @@ export const TEAM = ['Jordan', 'Teammate B', 'Teammate C'];
 // M9 & DR-04: Constrained AI Context Tool enum from PRD §5
 export const AI_TOOLS = ['Claude', 'ChatGPT', 'Cursor', 'Lovable', 'Replit', 'Other'];
 
+// M11 & DR-05: Deliverable Anchor Board enum ("Presentation", "Demo", "Report", "Documentation")
+export const INITIAL_DELIVERABLES = [
+  {
+    deliverableType: 'presentation',
+    label: 'Presentation',
+    placeholder: 'Enter presentation URL...',
+    url: '',
+    statusDot: false,
+  },
+  {
+    deliverableType: 'demo',
+    label: 'Demo',
+    placeholder: 'Enter live demo URL...',
+    url: 'https://vc-hackathon-hub.vercel.app',
+    statusDot: true,
+  },
+  {
+    deliverableType: 'report',
+    label: 'Report',
+    placeholder: 'Enter report URL...',
+    url: '',
+    statusDot: false,
+  },
+  {
+    deliverableType: 'documentation',
+    label: 'Documentation',
+    placeholder: 'Enter documentation URL...',
+    url: '',
+    statusDot: false,
+  },
+];
+
 // M9: Default Markdown template pre-filled for new tasks
 export const DEFAULT_CONTEXT_TEMPLATE = `## Context
 
@@ -432,10 +464,10 @@ Build the core 4-column Kanban board with localStorage persistence and M9 prompt
 - Fit all 4 columns within 1280px desktop viewport (NFR-06)
 
 **Tried so far**
-Implemented M4 board, M5 CRUD modal, M6 feature/bug styling, M7 task handoff, M8 due-tint, and M9/M10 context flow.
+Implemented M4 board, M5 CRUD modal, M6 feature/bug styling, M7 task handoff, M8 due-tint, M9/M10 context flow, and M11 Deliverable Anchor Board.
 
 **Pick up**
-Add M11 Deliverable Anchor Board banner above the 4-column Kanban board next.`,
+Implement M12 Secret Sauce (drag-and-drop across columns FR-09 + search and filter bar FR-10).`,
     contextTool: 'Cursor',
     contextUpdatedAt: new Date(Date.now() - 45 * 60 * 1000).toISOString(),
   },
@@ -461,7 +493,7 @@ Long task titles or UUID strings were stretching flex items inside the 4-column 
 Added min-w-0 and truncate classes to column headers and card footers.
 
 **Pick up**
-Verify layout stability once Anchor Banner (M11) and Search/Filter bar (FR-10) are added.`,
+Verify layout stability with Anchor Banner (M11) and Search/Filter bar (FR-10).`,
     contextTool: 'ChatGPT',
     contextUpdatedAt: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
   },
@@ -501,7 +533,7 @@ export function useLocalStorage(key, initialValue) {
       const raw = window.localStorage.getItem(key);
       if (raw != null) {
         const parsed = JSON.parse(raw);
-        if (Array.isArray(parsed)) {
+        if (key === 'vibetracker.tasks' && Array.isArray(parsed)) {
           return parsed.map((t, i) => ({
             ...t,
             context:
@@ -553,6 +585,28 @@ export default function App() {
   // M4 data-model
   const [tasks, setTasks] = useLocalStorage('vibetracker.tasks', mockTasks);
 
+  // M11 project-deliverables (FR-08, DR-05, NFR-01): Persistent 4-deliverable anchor state
+  const [deliverables, setDeliverables] = useLocalStorage(
+    'vibetracker.deliverables',
+    INITIAL_DELIVERABLES
+  );
+
+  // Update URL and boolean statusDot automatically on change (DR-05)
+  const handleDeliverableChange = (deliverableType, newUrl) => {
+    const hasLink = Boolean(newUrl && newUrl.trim().length > 0);
+    setDeliverables((prev) =>
+      prev.map((item) =>
+        item.deliverableType === deliverableType
+          ? {
+              ...item,
+              url: newUrl,
+              statusDot: hasLink,
+            }
+          : item
+      )
+    );
+  };
+
   // M7 & M10 toast + copied feedback state
   const [toastMessage, setToastMessage] = useState(null);
   const [copiedTaskId, setCopiedTaskId] = useState(null);
@@ -578,7 +632,7 @@ export default function App() {
     const markdownBlock = buildPromptContextMarkdown(taskLike);
     await copyTextToClipboard(markdownBlock);
     setCopiedTaskId(sourceKey || taskLike.id || 'modal');
-    triggerToast('Copied to clipboard!');
+    triggerToast('Copied. Paste it into your AI.');
   };
 
   // M5 crud-modal + M9 task-context state
@@ -849,7 +903,7 @@ export default function App() {
         {/* M7 task-owner Stretch Strip */}
         <section
           aria-label="Team Active Drivers"
-          className="mb-5 grid grid-cols-3 gap-3"
+          className="mb-4 grid grid-cols-3 gap-3"
         >
           {TEAM.map((member) => {
             const drivingTasks = tasks.filter(
@@ -904,7 +958,106 @@ export default function App() {
           })}
         </section>
 
-        {/* TODO M11 anchors: Anchor Banner (FR-08) goes here */}
+        {/* M11 project-deliverables: Deliverable Anchor Banner (FR-08, DR-05, NFR-01, NFR-03) */}
+        <section
+          aria-label="Deliverable Anchor Board"
+          className="mb-5 grid grid-cols-4 gap-3"
+        >
+          {deliverables.map((item) => {
+            const isLinked = Boolean(item.url && item.url.trim().length > 0);
+            const safeHref =
+              isLinked && /^https?:\/\//i.test(item.url.trim())
+                ? item.url.trim()
+                : isLinked
+                ? `https://${item.url.trim()}`
+                : null;
+
+            return (
+              <div
+                key={item.deliverableType}
+                style={{
+                  backgroundColor: THEME.surfaceCard,
+                  borderColor: isLinked ? `${THEME.brandAccent}66` : '#27272A',
+                }}
+                className="flex flex-col justify-between rounded-md border p-3 transition"
+              >
+                <div className="mb-2 flex items-center justify-between gap-2">
+                  <label
+                    htmlFor={`deliverable-${item.deliverableType}`}
+                    style={{ fontFamily: "'Space Grotesk', sans-serif" }}
+                    className="truncate text-[13px] font-semibold tracking-wide"
+                  >
+                    {item.label}
+                  </label>
+
+                  {/* NFR-03 & DR-05: Status indicator (empty ring vs filled dot + text label) */}
+                  <div className="flex items-center gap-1.5">
+                    {safeHref && (
+                      <a
+                        href={safeHref}
+                        target="_blank"
+                        rel="noreferrer"
+                        style={{
+                          color: THEME.brandAccent,
+                          fontFamily: "'JetBrains Mono', monospace",
+                        }}
+                        className="rounded border border-cyan-500/40 bg-cyan-500/10 px-1.5 py-0.5 text-[10px] font-medium hover:bg-cyan-500/20"
+                        title={`Open ${item.label} link in new tab`}
+                      >
+                        Open ↗
+                      </a>
+                    )}
+                    <span
+                      style={{
+                        color: isLinked ? THEME.dueSafe : THEME.textMuted,
+                        fontFamily: "'JetBrains Mono', monospace",
+                      }}
+                      className="inline-flex items-center gap-1 text-[10px] font-medium"
+                      title={
+                        isLinked
+                          ? `${item.label} URL linked`
+                          : `${item.label} URL not added yet`
+                      }
+                    >
+                      <span
+                        style={{
+                          backgroundColor: isLinked
+                            ? THEME.dueSafe
+                            : 'transparent',
+                          borderColor: isLinked
+                            ? THEME.dueSafe
+                            : THEME.textMuted,
+                          boxShadow: isLinked
+                            ? `0 0 8px ${THEME.dueSafe}`
+                            : 'none',
+                        }}
+                        className="inline-block h-2.5 w-2.5 rounded-full border-2 transition-all"
+                        aria-hidden="true"
+                      />
+                      <span>{isLinked ? 'Linked' : 'Empty'}</span>
+                    </span>
+                  </div>
+                </div>
+
+                <input
+                  id={`deliverable-${item.deliverableType}`}
+                  type="url"
+                  value={item.url}
+                  onChange={(e) =>
+                    handleDeliverableChange(item.deliverableType, e.target.value)
+                  }
+                  placeholder={item.placeholder || 'Enter URL...'}
+                  style={{
+                    backgroundColor: THEME.surfacePage,
+                    color: THEME.textPrimary,
+                    fontFamily: "'JetBrains Mono', monospace",
+                  }}
+                  className="w-full rounded border border-zinc-700/90 px-2.5 py-1.5 text-[11px] placeholder-zinc-600 focus:border-cyan-400 focus:outline-none"
+                />
+              </div>
+            );
+          })}
+        </section>
 
         {/* M4 data-model (FR-01 & NFR-06): 4-column board */}
         <main className="grid grid-cols-4 gap-3">
@@ -992,7 +1145,7 @@ export default function App() {
                             aria-hidden="true"
                           />
 
-                          {/* Card Top: Shortened UUID + M10 Copy Context Pill (Slide 13) + M6 Type Badge */}
+                          {/* Card Top: Shortened UUID + M10 Copy Context Pill (Slide 15) + M6 Type Badge */}
                           <div className="mb-2 flex items-center justify-between gap-1.5">
                             <span
                               title={task.id}
@@ -1009,7 +1162,7 @@ export default function App() {
                               className="flex shrink-0 items-center gap-1"
                               onClick={(e) => e.stopPropagation()}
                             >
-                              {/* M10 Copy Context button in top-right of card (matches Hackathon Slide 13) */}
+                              {/* M10 Copy Context button on card (FR-07) */}
                               <button
                                 type="button"
                                 onClick={() => handleCopyContext(task, task.id)}
@@ -1134,7 +1287,7 @@ export default function App() {
                               </span>
                             </div>
 
-                            {/* Creator label + Hand off dropdown (FR-04) + M10 Copy Context button (FR-07) */}
+                            {/* Creator label + Hand off dropdown (FR-04) */}
                             <div
                               className="flex items-center justify-between gap-1.5 pt-0.5"
                               onClick={(e) => e.stopPropagation()}
@@ -1447,7 +1600,7 @@ export default function App() {
                     </label>
                   </div>
 
-                  {/* M9 Preview + M10 Copy Context Button with Popover Toast (Slide 13) */}
+                  {/* M9 Preview + M10 Copy Context Button with Popover Toast (Slide 15) */}
                   <div className="relative flex items-center gap-2">
                     <button
                       type="button"
@@ -1494,7 +1647,7 @@ export default function App() {
                         <CopyIcon copied={isModalCopied} className="h-3.5 w-3.5" />
                       </button>
 
-                      {/* Floating "Copied to clipboard!" tooltip right below the button (Slide 13) */}
+                      {/* Floating "Copied to clipboard!" tooltip right below the button */}
                       {isModalCopied && (
                         <div
                           style={{
@@ -1553,7 +1706,7 @@ export default function App() {
                   )}
                 </div>
 
-                {/* Last Updated Timestamp Line (Slide 12 & 13) */}
+                {/* Last Updated Timestamp Line */}
                 <div
                   style={{
                     color: THEME.textMuted,
