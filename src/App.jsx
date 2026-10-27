@@ -11,6 +11,25 @@ export const STAGES = [
 // DR-03: Assignee constrained to 3 team members from PRD §8
 export const TEAM = ['Jordan', 'Teammate B', 'Teammate C'];
 
+// M9 & DR-04: Constrained AI Context Tool enum from PRD §5
+export const AI_TOOLS = ['Claude', 'ChatGPT', 'Cursor', 'Lovable', 'Replit', 'Other'];
+
+// M9: Default Markdown template pre-filled for new tasks
+export const DEFAULT_CONTEXT_TEMPLATE = `## Context
+
+**Background**
+Describe the goal of this task and how it fits into the architecture.
+
+**Constraints**
+- Only modify src/App.jsx (do not touch index.css or main.jsx)
+- Persist all state to localStorage under < 50ms (NFR-01)
+
+**Tried so far**
+Initial component scaffolding and Tailwind token integration.
+
+**Pick up**
+Next step to implement or debug in the next AI prompt session.`;
+
 // DESIGN.md §2 Color Palette Constants
 export const THEME = {
   brandPrimary: '#4F46E5',
@@ -134,9 +153,85 @@ export function toDisplayDate(yyyymmdd) {
   return `${dd}-${mm}-${yyyy}`;
 }
 
+// M9 (FR-06 & DR-04): Format ISO timestamp into human-readable relative time ("last updated 2h ago")
+export function formatRelativeTime(isoString) {
+  if (!isoString) return 'Not saved yet';
+  const time = new Date(isoString).getTime();
+  if (Number.isNaN(time)) return 'Not saved yet';
+
+  const diffSeconds = Math.max(0, Math.floor((Date.now() - time) / 1000));
+  if (diffSeconds < 45) return 'just now';
+  const diffMinutes = Math.floor(diffSeconds / 60);
+  if (diffMinutes < 60) return `${diffMinutes}m ago`;
+  const diffHours = Math.floor(diffMinutes / 60);
+  if (diffHours < 24) return `${diffHours}h ago`;
+  const diffDays = Math.floor(diffHours / 24);
+  return `${diffDays}d ago`;
+}
+
+// M9 Stretch: Lightweight Markdown preview renderer for the Context field
+export function renderMarkdownPreview(mdText = '') {
+  if (!mdText.trim()) {
+    return (
+      <p style={{ color: THEME.textMuted }} className="italic text-[12px]">
+        No prompt context written yet.
+      </p>
+    );
+  }
+
+  const lines = mdText.split('\n');
+  return lines.map((line, idx) => {
+    const trimmed = line.trim();
+    if (!trimmed) {
+      return <div key={idx} className="h-2" />;
+    }
+    if (trimmed.startsWith('## ')) {
+      return (
+        <h4
+          key={idx}
+          style={{ color: THEME.brandAccent, fontFamily: "'Space Grotesk', sans-serif" }}
+          className="mt-1 mb-1 text-[13px] font-semibold uppercase tracking-wide"
+        >
+          {trimmed.replace(/^##\s+/, '')}
+        </h4>
+      );
+    }
+    if (trimmed.startsWith('**') && trimmed.endsWith('**') && trimmed.length > 4) {
+      return (
+        <p
+          key={idx}
+          style={{ color: THEME.textPrimary }}
+          className="mt-1.5 text-[12px] font-semibold"
+        >
+          {trimmed.slice(2, -2)}
+        </p>
+      );
+    }
+    if (trimmed.startsWith('- ')) {
+      return (
+        <li
+          key={idx}
+          style={{ color: THEME.textMuted }}
+          className="ml-4 list-disc text-[12px] leading-relaxed"
+        >
+          {trimmed.slice(2)}
+        </li>
+      );
+    }
+    return (
+      <p
+        key={idx}
+        style={{ color: THEME.textMuted }}
+        className="text-[12px] leading-relaxed"
+      >
+        {line}
+      </p>
+    );
+  });
+}
+
 // M8 due-tint (FR-05, NFR-03, DESIGN.md §2 & §4): Calculate urgency state from DD-MM-YYYY dueDate & status
 export function getDueUrgency(task) {
-  // Done tasks always look neutral, even if previously overdue
   if (task.status === 'done') {
     return {
       key: 'neutral',
@@ -161,7 +256,6 @@ export function getDueUrgency(task) {
   let dueTime;
   if (parts.length === 3) {
     const [p0, p1, p2] = parts.map(Number);
-    // Support both DD-MM-YYYY and YYYY-MM-DD gracefully
     const year = parts[0].length === 4 ? p0 : p2;
     const month = p1 - 1;
     const day = parts[0].length === 4 ? p2 : p0;
@@ -202,7 +296,7 @@ export function getDueUrgency(task) {
   };
 }
 
-// DR-06: mockTasks pre-populated to showcase all 4 M8 urgency states on load
+// DR-06 & DR-04: mockTasks pre-populated with M8 urgency states and M9 prompt contexts
 export const mockTasks = [
   {
     id: 'a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d',
@@ -213,7 +307,23 @@ export const mockTasks = [
     creator: TEAM[0],
     assignee: TEAM[0],
     createdDate: getTodayDDMMYYYY(),
-    dueDate: getOffsetDateDDMMYYYY(-2), // Done overrides past due -> Neutral (#71717A)
+    dueDate: getOffsetDateDDMMYYYY(-2),
+    context: `## Context
+
+**Background**
+Configured DESIGN.md palette tokens in tailwind.config.js and THEME object.
+
+**Constraints**
+- Maintain WCAG 2.1 AA contrast ratios on #09090B and #18181B surfaces (NFR-03)
+- Use Space Grotesk, Inter, and JetBrains Mono fonts
+
+**Tried so far**
+Verified all 4 urgency tokens (#10B981, #FACC15, #FF2A54, #71717A).
+
+**Pick up**
+Completed and verified across all cards.`,
+    contextTool: 'Claude',
+    contextUpdatedAt: new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString(),
   },
   {
     id: 'b2c3d4e5-f6a7-4b8c-9d0e-1f2a3b4c5d6e',
@@ -224,7 +334,23 @@ export const mockTasks = [
     creator: TEAM[0],
     assignee: TEAM[0],
     createdDate: getTodayDDMMYYYY(),
-    dueDate: getTodayDDMMYYYY(), // Due today (< 24h) -> Warning (#FACC15)
+    dueDate: getTodayDDMMYYYY(),
+    context: `## Context
+
+**Background**
+Build the core 4-column Kanban board with localStorage persistence and M9 prompt context support.
+
+**Constraints**
+- Do not modify index.css or main.jsx
+- Fit all 4 columns within 1280px desktop viewport (NFR-06)
+
+**Tried so far**
+Implemented M4 board, M5 CRUD modal, M6 feature/bug styling, M7 task handoff, and M8 due-tint.
+
+**Pick up**
+Wire up M10 Copy Context button on cards and inside the modal next.`,
+    contextTool: 'Cursor',
+    contextUpdatedAt: new Date(Date.now() - 45 * 60 * 1000).toISOString(),
   },
   {
     id: 'c3d4e5f6-a7b8-4c9d-0e1f-2a3b4c5d6e7f',
@@ -235,7 +361,22 @@ export const mockTasks = [
     creator: TEAM[0],
     assignee: TEAM[1],
     createdDate: getOffsetDateDDMMYYYY(-3),
-    dueDate: getOffsetDateDDMMYYYY(-1), // Yesterday -> Past Due (#FF2A54)
+    dueDate: getOffsetDateDDMMYYYY(-1),
+    context: `## Context
+
+**Background**
+Long task titles or UUID strings were stretching flex items inside the 4-column grid.
+
+**Constraints**
+- Keep max-w-[1280px] container without horizontal scrollbar
+
+**Tried so far**
+Added min-w-0 and truncate classes to column headers and card footers.
+
+**Pick up**
+Verify layout stability once Anchor Banner (M11) and Search/Filter bar (FR-10) are added.`,
+    contextTool: 'ChatGPT',
+    contextUpdatedAt: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
   },
   {
     id: 'd4e5f6a7-b8c9-4d0e-1f2a-3b4c5d6e7f8a',
@@ -246,7 +387,23 @@ export const mockTasks = [
     creator: TEAM[1],
     assignee: TEAM[2],
     createdDate: getTodayDDMMYYYY(),
-    dueDate: getOffsetDateDDMMYYYY(4), // 4 days out -> Safe (#10B981)
+    dueDate: getOffsetDateDDMMYYYY(4),
+    context: `## Context
+
+**Background**
+Users need a single modal to create, edit, and delete tasks along with embedded AI prompt context.
+
+**Constraints**
+- Persist changes to localStorage in under 50ms (NFR-01)
+- Include confirmation before deleting a task
+
+**Tried so far**
+Added form fields for title, description, type, status, assignee, due date, and M9 context.
+
+**Pick up**
+Add one-click UTF-8 Markdown clipboard copy in Milestone 10.`,
+    contextTool: 'Lovable',
+    contextUpdatedAt: new Date(Date.now() - 15 * 60 * 1000).toISOString(),
   },
 ];
 
@@ -255,7 +412,26 @@ export function useLocalStorage(key, initialValue) {
   const [value, setValue] = useState(() => {
     try {
       const raw = window.localStorage.getItem(key);
-      return raw != null ? JSON.parse(raw) : initialValue;
+      if (raw != null) {
+        const parsed = JSON.parse(raw);
+        // Backfill M9 fields if existing localStorage tasks were saved in M8
+        if (Array.isArray(parsed)) {
+          return parsed.map((t, i) => ({
+            ...t,
+            context:
+              typeof t.context === 'string'
+                ? t.context
+                : mockTasks[i]?.context || DEFAULT_CONTEXT_TEMPLATE,
+            contextTool: t.contextTool || mockTasks[i]?.contextTool || 'Claude',
+            contextUpdatedAt:
+              t.contextUpdatedAt ||
+              mockTasks[i]?.contextUpdatedAt ||
+              new Date().toISOString(),
+          }));
+        }
+        return parsed;
+      }
+      return initialValue;
     } catch {
       return initialValue;
     }
@@ -304,9 +480,10 @@ export default function App() {
     return () => clearTimeout(timer);
   }, [toastMessage]);
 
-  // M5 crud-modal state
+  // M5 crud-modal + M9 task-context state
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingTask, setEditingTask] = useState(null);
+  const [showContextPreview, setShowContextPreview] = useState(false);
   const [formData, setFormData] = useState({
     title: '',
     description: '',
@@ -316,10 +493,15 @@ export default function App() {
     assignee: TEAM[0],
     dueDate: '',
     createdDate: '',
+    context: DEFAULT_CONTEXT_TEMPLATE,
+    contextTool: 'Claude',
+    contextUpdatedAt: '',
   });
 
   const handleOpenNewModal = () => {
+    const nowIso = new Date().toISOString();
     setEditingTask(null);
+    setShowContextPreview(false);
     setFormData({
       title: '',
       description: '',
@@ -329,12 +511,16 @@ export default function App() {
       assignee: TEAM[0],
       dueDate: toInputDate(getOffsetDateDDMMYYYY(3)),
       createdDate: getTodayDDMMYYYY(),
+      context: DEFAULT_CONTEXT_TEMPLATE,
+      contextTool: 'Claude',
+      contextUpdatedAt: nowIso,
     });
     setIsModalOpen(true);
   };
 
   const handleOpenEditModal = (task) => {
     setEditingTask(task);
+    setShowContextPreview(false);
     setFormData({
       title: task.title,
       description: task.description || '',
@@ -344,6 +530,12 @@ export default function App() {
       assignee: task.assignee,
       dueDate: toInputDate(task.dueDate),
       createdDate: task.createdDate || getTodayDDMMYYYY(),
+      context:
+        typeof task.context === 'string' && task.context.length > 0
+          ? task.context
+          : DEFAULT_CONTEXT_TEMPLATE,
+      contextTool: task.contextTool || 'Claude',
+      contextUpdatedAt: task.contextUpdatedAt || new Date().toISOString(),
     });
     setIsModalOpen(true);
   };
@@ -351,6 +543,24 @@ export default function App() {
   const handleCloseModal = () => {
     setIsModalOpen(false);
     setEditingTask(null);
+    setShowContextPreview(false);
+  };
+
+  // M9: Update context or AI tool and refresh contextUpdatedAt ISO timestamp automatically
+  const handleContextChange = (newContext) => {
+    setFormData((prev) => ({
+      ...prev,
+      context: newContext,
+      contextUpdatedAt: new Date().toISOString(),
+    }));
+  };
+
+  const handleContextToolChange = (newTool) => {
+    setFormData((prev) => ({
+      ...prev,
+      contextTool: newTool,
+      contextUpdatedAt: new Date().toISOString(),
+    }));
   };
 
   // M7 task-owner (FR-04): Direct "Hand off to..." reassignment + confirmation toast
@@ -367,9 +577,18 @@ export default function App() {
     if (!formData.title.trim()) return;
 
     const formattedDueDate = formData.dueDate ? toDisplayDate(formData.dueDate) : '';
+    const nowIso = new Date().toISOString();
 
     if (editingTask) {
       const assigneeChanged = editingTask.assignee !== formData.assignee;
+      const contextChanged =
+        editingTask.context !== formData.context ||
+        editingTask.contextTool !== formData.contextTool;
+
+      const updatedTimestamp = contextChanged
+        ? nowIso
+        : formData.contextUpdatedAt || editingTask.contextUpdatedAt || nowIso;
+
       setTasks((prev) =>
         prev.map((t) =>
           t.id === editingTask.id
@@ -382,6 +601,9 @@ export default function App() {
                 creator: formData.creator || t.creator || TEAM[0],
                 assignee: formData.assignee,
                 dueDate: formattedDueDate,
+                context: formData.context,
+                contextTool: formData.contextTool || 'Claude',
+                contextUpdatedAt: updatedTimestamp,
               }
             : t
         )
@@ -400,6 +622,9 @@ export default function App() {
         assignee: formData.assignee,
         createdDate: formData.createdDate || getTodayDDMMYYYY(),
         dueDate: formattedDueDate,
+        context: formData.context,
+        contextTool: formData.contextTool || 'Claude',
+        contextUpdatedAt: formData.contextUpdatedAt || nowIso,
       };
       setTasks((prev) => [...prev, newTask]);
       triggerToast(`Assigned to ${formData.assignee}.`);
@@ -463,7 +688,7 @@ export default function App() {
               Vibecoding Project Tracker
             </h1>
             <p style={{ color: THEME.textMuted }} className="text-[12px]">
-              Team starter
+              Team JORDAN · All you need is Jordan
             </p>
           </div>
 
@@ -568,7 +793,7 @@ export default function App() {
                     color: THEME.textMuted,
                     fontFamily: "'JetBrains Mono', monospace",
                   }}
-                  className="ml-2 shrink-0 rounded bg-zinc-900 px-2 py-0.5 text-[11px] border border-zinc-800"
+                  className="ml-2 shrink-0 rounded border border-zinc-800 bg-zinc-900 px-2 py-0.5 text-[11px]"
                 >
                   {totalAssigned} {totalAssigned === 1 ? 'task' : 'tasks'}
                 </span>
@@ -692,7 +917,7 @@ export default function App() {
                           </div>
 
                           {/* Card Title & Description */}
-                          <div className="mb-3">
+                          <div className="mb-2.5">
                             <h3
                               className={`text-[14px] font-medium leading-snug ${
                                 task.status === 'done' ? 'line-through opacity-75' : ''
@@ -710,8 +935,32 @@ export default function App() {
                             )}
                           </div>
 
+                          {/* M9 Context Indicator Pill on Card */}
+                          {task.context && (
+                            <div className="mb-2.5 flex items-center justify-between gap-1.5 rounded border border-zinc-800/90 bg-zinc-900/70 px-2 py-1">
+                              <span
+                                style={{
+                                  color: THEME.brandAccent,
+                                  fontFamily: "'JetBrains Mono', monospace",
+                                }}
+                                className="truncate text-[10px] font-medium"
+                              >
+                                AI: {task.contextTool || 'Claude'}
+                              </span>
+                              <span
+                                style={{
+                                  color: THEME.textMuted,
+                                  fontFamily: "'JetBrains Mono', monospace",
+                                }}
+                                className="shrink-0 text-[10px]"
+                              >
+                                {formatRelativeTime(task.contextUpdatedAt)}
+                              </span>
+                            </div>
+                          )}
+
                           {/* M7 & M8 Footer: Assignee Avatar + Urgency-Tinted Due Date Pill */}
-                          <div className="border-t border-zinc-800/80 pt-2.5 space-y-2">
+                          <div className="space-y-2 border-t border-zinc-800/80 pt-2.5">
                             <div className="flex items-center justify-between gap-1">
                               <div className="flex min-w-0 items-center gap-1.5">
                                 <span
@@ -807,7 +1056,7 @@ export default function App() {
         </main>
       </div>
 
-      {/* M5, M6, M7 & M8 CRUD Modal */}
+      {/* M5, M6, M7, M8 & M9 CRUD + Context Modal */}
       {isModalOpen && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4"
@@ -819,7 +1068,7 @@ export default function App() {
               color: THEME.textPrimary,
               borderColor: `${modalAccentColor}66`,
             }}
-            className="relative w-full max-w-lg overflow-hidden rounded-lg border p-6 pl-7 shadow-xl"
+            className="relative max-h-[92vh] w-full max-w-2xl overflow-y-auto rounded-lg border p-6 pl-7 shadow-xl"
             onClick={(e) => e.stopPropagation()}
           >
             {/* M6 consistent left accent stripe inside the modal */}
@@ -909,7 +1158,7 @@ export default function App() {
                   Description
                 </label>
                 <textarea
-                  rows={3}
+                  rows={2}
                   value={formData.description}
                   onChange={(e) =>
                     setFormData({ ...formData, description: e.target.value })
@@ -919,7 +1168,7 @@ export default function App() {
                     backgroundColor: THEME.surfacePage,
                     color: THEME.textPrimary,
                   }}
-                  className="w-full rounded-md border border-zinc-700 px-3 py-2 text-[14px] placeholder-zinc-600 focus:border-indigo-500 focus:outline-none"
+                  className="w-full rounded-md border border-zinc-700 px-3 py-2 text-[13px] placeholder-zinc-600 focus:border-indigo-500 focus:outline-none"
                 />
               </div>
 
@@ -942,7 +1191,7 @@ export default function App() {
                       color: modalAccentColor,
                       borderColor: `${modalAccentColor}88`,
                     }}
-                    className="w-full rounded-md border px-3 py-2 text-[14px] font-medium focus:outline-none"
+                    className="w-full rounded-md border px-3 py-2 text-[13px] font-medium focus:outline-none"
                   >
                     <option value="feature">✨ Feature</option>
                     <option value="bug">🐛 Bug</option>
@@ -965,7 +1214,7 @@ export default function App() {
                       backgroundColor: THEME.surfacePage,
                       color: THEME.textPrimary,
                     }}
-                    className="w-full rounded-md border border-zinc-700 px-3 py-2 text-[14px] focus:border-indigo-500 focus:outline-none"
+                    className="w-full rounded-md border border-zinc-700 px-3 py-2 text-[13px] focus:border-indigo-500 focus:outline-none"
                   >
                     {STAGES.map((stage) => (
                       <option key={stage.id} value={stage.id}>
@@ -1050,6 +1299,147 @@ export default function App() {
                     }}
                     className="w-full rounded-md border border-zinc-700 px-2.5 py-2 text-[12px] focus:border-indigo-500 focus:outline-none"
                   />
+                </div>
+              </div>
+
+              {/* M9 Task Context Section (FR-06 & DR-04) */}
+              <div className="rounded-md border border-zinc-800 bg-zinc-900/60 p-3.5">
+                <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <label
+                      htmlFor="task-context-textarea"
+                      style={{
+                        color: THEME.brandAccent,
+                        fontFamily: "'Space Grotesk', sans-serif",
+                      }}
+                      className="text-[13px] font-semibold uppercase tracking-wide"
+                    >
+                      Context (FR-06 · Prompt Briefing)
+                    </label>
+                    <span
+                      style={{
+                        color: THEME.textMuted,
+                        fontFamily: "'JetBrains Mono', monospace",
+                      }}
+                      className="text-[11px]"
+                    >
+                      · last updated {formatRelativeTime(formData.contextUpdatedAt)}
+                    </span>
+                  </div>
+
+                  {/* M9 Stretch: Toggle Live Markdown Preview */}
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        handleContextChange(DEFAULT_CONTEXT_TEMPLATE)
+                      }
+                      style={{ color: THEME.textMuted }}
+                      className="rounded border border-zinc-700 px-2 py-0.5 text-[11px] hover:border-zinc-500 hover:text-white"
+                      title="Reset to default Context template"
+                    >
+                      Reset Template
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setShowContextPreview((p) => !p)}
+                      style={{
+                        backgroundColor: showContextPreview
+                          ? `${THEME.brandAccent}22`
+                          : THEME.surfacePage,
+                        color: showContextPreview
+                          ? THEME.brandAccent
+                          : THEME.textMuted,
+                        borderColor: showContextPreview
+                          ? `${THEME.brandAccent}66`
+                          : '#3F3F46',
+                      }}
+                      className="rounded border px-2.5 py-0.5 text-[11px] font-medium transition"
+                    >
+                      {showContextPreview ? 'Split Preview: ON' : 'Live Preview'}
+                    </button>
+                  </div>
+                </div>
+
+                {/* Context Editor + Optional Split Live Markdown Preview */}
+                <div
+                  className={
+                    showContextPreview
+                      ? 'grid grid-cols-2 gap-3'
+                      : 'grid grid-cols-1'
+                  }
+                >
+                  <textarea
+                    id="task-context-textarea"
+                    rows={7}
+                    value={formData.context}
+                    onChange={(e) => handleContextChange(e.target.value)}
+                    placeholder={DEFAULT_CONTEXT_TEMPLATE}
+                    style={{
+                      backgroundColor: THEME.surfacePage,
+                      color: THEME.textPrimary,
+                      fontFamily: "'JetBrains Mono', monospace",
+                    }}
+                    className="w-full rounded-md border border-zinc-700 px-3 py-2 text-[12px] leading-relaxed placeholder-zinc-600 focus:border-cyan-400 focus:outline-none"
+                  />
+
+                  {showContextPreview && (
+                    <div
+                      style={{ backgroundColor: THEME.surfacePage }}
+                      className="max-h-[190px] overflow-y-auto rounded-md border border-zinc-800 p-3"
+                    >
+                      <div
+                        style={{
+                          color: THEME.textMuted,
+                          fontFamily: "'JetBrains Mono', monospace",
+                        }}
+                        className="mb-1.5 border-b border-zinc-800 pb-1 text-[10px] uppercase"
+                      >
+                        Markdown Preview
+                      </div>
+                      {renderMarkdownPreview(formData.context)}
+                    </div>
+                  )}
+                </div>
+
+                {/* AI Tool Dropdown (DR-04 contextTool) + ISO Timestamp */}
+                <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
+                  <div className="flex items-center gap-2">
+                    <label
+                      htmlFor="context-tool-select"
+                      style={{ color: THEME.textMuted }}
+                      className="text-[12px] font-medium"
+                    >
+                      Optional AI Context Tool:
+                    </label>
+                    <select
+                      id="context-tool-select"
+                      value={formData.contextTool}
+                      onChange={(e) => handleContextToolChange(e.target.value)}
+                      style={{
+                        backgroundColor: THEME.surfacePage,
+                        color: THEME.brandAccent,
+                        fontFamily: "'JetBrains Mono', monospace",
+                      }}
+                      className="rounded-md border border-zinc-700 px-2.5 py-1 text-[12px] font-medium focus:border-cyan-400 focus:outline-none"
+                    >
+                      {AI_TOOLS.map((tool) => (
+                        <option key={tool} value={tool}>
+                          {tool}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <span
+                    style={{
+                      color: THEME.textMuted,
+                      fontFamily: "'JetBrains Mono', monospace",
+                    }}
+                    className="text-[10px]"
+                  >
+                    contextUpdatedAt: {formData.contextUpdatedAt || '—'}
+                  </span>
                 </div>
               </div>
 
