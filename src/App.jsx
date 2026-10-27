@@ -106,6 +106,41 @@ export function TypeIcon({ type, className = 'w-3.5 h-3.5' }) {
   );
 }
 
+// M10 copy-context (FR-07): Clipboard SVG icon
+export function CopyIcon({ copied = false, className = 'w-3.5 h-3.5' }) {
+  if (copied) {
+    return (
+      <svg
+        className={className}
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        aria-hidden="true"
+      >
+        <polyline points="20 6 9 17 4 12" />
+      </svg>
+    );
+  }
+  return (
+    <svg
+      className={className}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <rect width="14" height="14" x="8" y="8" rx="2" ry="2" />
+      <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" />
+    </svg>
+  );
+}
+
 // Helper for DR-01 (UUID generation)
 export function generateId() {
   return typeof crypto !== 'undefined' && crypto.randomUUID
@@ -167,6 +202,58 @@ export function formatRelativeTime(isoString) {
   if (diffHours < 24) return `${diffHours}h ago`;
   const diffDays = Math.floor(diffHours / 24);
   return `${diffDays}d ago`;
+}
+
+// M10 copy-context (FR-07 & NFR-05): Format clean UTF-8 Markdown briefing for external AI chat
+export function buildPromptContextMarkdown(task) {
+  const stageLabel =
+    STAGES.find((s) => s.id === task.status)?.label || task.status || 'To Do';
+  const toolName = task.contextTool || 'Claude';
+  const dueDisplay = task.dueDate ? toDisplayDate(task.dueDate) : 'None';
+  const descriptionBlock = task.description?.trim()
+    ? task.description.trim()
+    : '_No description provided._';
+  const contextBlock = task.context?.trim()
+    ? task.context.trim()
+    : DEFAULT_CONTEXT_TEMPLATE;
+
+  return `# Vibecoding Task Briefing: ${task.title || 'Untitled Task'}
+
+- **Task ID:** \`${task.id || 'draft'}\`
+- **Type:** ${(task.type || 'feature').toUpperCase()}
+- **Stage:** ${stageLabel}
+- **Assignee:** ${task.assignee || TEAM[0]} (Created by: ${task.creator || task.assignee || TEAM[0]})
+- **Due Date:** ${dueDisplay}
+- **Target AI Tool:** ${toolName}
+- **Context Updated:** ${task.contextUpdatedAt || new Date().toISOString()}
+
+## Task Description
+${descriptionBlock}
+
+${contextBlock}
+`;
+}
+
+// M10 (NFR-05): Fast UTF-8 clipboard helper (< 150ms response)
+export async function copyTextToClipboard(text) {
+  if (navigator.clipboard && window.isSecureContext) {
+    await navigator.clipboard.writeText(text);
+    return true;
+  }
+  const textArea = document.createElement('textarea');
+  textArea.value = text;
+  textArea.style.position = 'fixed';
+  textArea.style.left = '-9999px';
+  textArea.style.top = '0';
+  document.body.appendChild(textArea);
+  textArea.focus();
+  textArea.select();
+  try {
+    document.execCommand('copy');
+    return true;
+  } finally {
+    document.body.removeChild(textArea);
+  }
 }
 
 // M9 Stretch: Lightweight Markdown preview renderer for the Context field
@@ -345,10 +432,10 @@ Build the core 4-column Kanban board with localStorage persistence and M9 prompt
 - Fit all 4 columns within 1280px desktop viewport (NFR-06)
 
 **Tried so far**
-Implemented M4 board, M5 CRUD modal, M6 feature/bug styling, M7 task handoff, and M8 due-tint.
+Implemented M4 board, M5 CRUD modal, M6 feature/bug styling, M7 task handoff, M8 due-tint, and M9/M10 context flow.
 
 **Pick up**
-Wire up M10 Copy Context button on cards and inside the modal next.`,
+Add M11 Deliverable Anchor Board banner above the 4-column Kanban board next.`,
     contextTool: 'Cursor',
     contextUpdatedAt: new Date(Date.now() - 45 * 60 * 1000).toISOString(),
   },
@@ -395,13 +482,13 @@ Users need a single modal to create, edit, and delete tasks along with embedded 
 
 **Constraints**
 - Persist changes to localStorage in under 50ms (NFR-01)
-- Include confirmation before deleting a task
+- Copy UTF-8 Markdown to clipboard with confirmation toast in under 150ms (NFR-05)
 
 **Tried so far**
-Added form fields for title, description, type, status, assignee, due date, and M9 context.
+Added form fields for title, description, type, status, assignee, due date, M9 context, and M10 Copy Context button.
 
 **Pick up**
-Add one-click UTF-8 Markdown clipboard copy in Milestone 10.`,
+Test pasting the formatted Markdown block directly into Claude or ChatGPT.`,
     contextTool: 'Lovable',
     contextUpdatedAt: new Date(Date.now() - 15 * 60 * 1000).toISOString(),
   },
@@ -414,7 +501,6 @@ export function useLocalStorage(key, initialValue) {
       const raw = window.localStorage.getItem(key);
       if (raw != null) {
         const parsed = JSON.parse(raw);
-        // Backfill M9 fields if existing localStorage tasks were saved in M8
         if (Array.isArray(parsed)) {
           return parsed.map((t, i) => ({
             ...t,
@@ -467,8 +553,9 @@ export default function App() {
   // M4 data-model
   const [tasks, setTasks] = useLocalStorage('vibetracker.tasks', mockTasks);
 
-  // M7 task-owner toast state
+  // M7 & M10 toast + copied feedback state
   const [toastMessage, setToastMessage] = useState(null);
+  const [copiedTaskId, setCopiedTaskId] = useState(null);
 
   const triggerToast = (msg) => {
     setToastMessage(msg);
@@ -479,6 +566,20 @@ export default function App() {
     const timer = setTimeout(() => setToastMessage(null), 2600);
     return () => clearTimeout(timer);
   }, [toastMessage]);
+
+  useEffect(() => {
+    if (!copiedTaskId) return;
+    const timer = setTimeout(() => setCopiedTaskId(null), 1800);
+    return () => clearTimeout(timer);
+  }, [copiedTaskId]);
+
+  // M10 copy-context (FR-07 & NFR-05): Copy task + prompt context Markdown in < 150ms
+  const handleCopyContext = async (taskLike, sourceKey) => {
+    const markdownBlock = buildPromptContextMarkdown(taskLike);
+    await copyTextToClipboard(markdownBlock);
+    setCopiedTaskId(sourceKey || taskLike.id || 'modal');
+    triggerToast('Copied to clipboard!');
+  };
 
   // M5 crud-modal + M9 task-context state
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -644,6 +745,7 @@ export default function App() {
 
   const isModalBug = formData.type === 'bug';
   const modalAccentColor = isModalBug ? THEME.typeBug : THEME.typeFeature;
+  const isModalCopied = copiedTaskId === 'modal-context';
 
   return (
     <div
@@ -654,7 +756,7 @@ export default function App() {
       }}
       className="min-h-screen w-full overflow-x-hidden px-4 py-5"
     >
-      {/* M7 Toast Notification */}
+      {/* M7 & M10 Toast Notification (FR-04, FR-07, NFR-05) */}
       {toastMessage && (
         <div
           role="status"
@@ -849,6 +951,7 @@ export default function App() {
                       const accentHex = isBug ? THEME.typeBug : THEME.typeFeature;
                       const avatarBg = getAvatarColor(task.assignee);
                       const creatorName = task.creator || task.assignee || TEAM[0];
+                      const isCardCopied = copiedTaskId === task.id;
 
                       // M8 due-tint calculation (FR-05 & DESIGN.md §2 / §4)
                       const urgency = getDueUrgency(task);
@@ -889,31 +992,59 @@ export default function App() {
                             aria-hidden="true"
                           />
 
-                          {/* Card Top: Shortened UUID + M6 Type Badge */}
-                          <div className="mb-2 flex items-center justify-between gap-2">
+                          {/* Card Top: Shortened UUID + M10 Copy Context Pill (Slide 13) + M6 Type Badge */}
+                          <div className="mb-2 flex items-center justify-between gap-1.5">
                             <span
                               title={task.id}
                               style={{
                                 color: THEME.textMuted,
                                 fontFamily: "'JetBrains Mono', monospace",
                               }}
-                              className="text-[11px]"
+                              className="truncate text-[11px]"
                             >
-                              #{task.id.slice(0, 8)}
+                              #{task.id.slice(0, 6)}
                             </span>
 
-                            <span
-                              style={{
-                                backgroundColor: `${accentHex}20`,
-                                color: accentHex,
-                                borderColor: `${accentHex}66`,
-                                fontFamily: "'JetBrains Mono', monospace",
-                              }}
-                              className="inline-flex items-center gap-1 rounded border px-2 py-0.5 text-[11px] font-medium uppercase"
+                            <div
+                              className="flex shrink-0 items-center gap-1"
+                              onClick={(e) => e.stopPropagation()}
                             >
-                              <TypeIcon type={task.type} className="h-3 w-3" />
-                              {task.type}
-                            </span>
+                              {/* M10 Copy Context button in top-right of card (matches Hackathon Slide 13) */}
+                              <button
+                                type="button"
+                                onClick={() => handleCopyContext(task, task.id)}
+                                style={{
+                                  backgroundColor: isCardCopied
+                                    ? `${THEME.dueSafe}28`
+                                    : `${THEME.brandAccent}18`,
+                                  color: isCardCopied
+                                    ? THEME.dueSafe
+                                    : THEME.brandAccent,
+                                  borderColor: isCardCopied
+                                    ? THEME.dueSafe
+                                    : `${THEME.brandAccent}66`,
+                                  fontFamily: "'JetBrains Mono', monospace",
+                                }}
+                                className="inline-flex items-center gap-1 rounded border px-1.5 py-0.5 text-[10px] font-semibold transition hover:bg-cyan-500/25 focus:outline-none"
+                                title="Copy Context Markdown to clipboard (FR-07)"
+                              >
+                                <span>{isCardCopied ? 'Copied!' : 'Copy Context'}</span>
+                                <CopyIcon copied={isCardCopied} className="h-2.5 w-2.5" />
+                              </button>
+
+                              <span
+                                style={{
+                                  backgroundColor: `${accentHex}20`,
+                                  color: accentHex,
+                                  borderColor: `${accentHex}66`,
+                                  fontFamily: "'JetBrains Mono', monospace",
+                                }}
+                                className="inline-flex items-center gap-1 rounded border px-1.5 py-0.5 text-[10px] font-medium uppercase"
+                              >
+                                <TypeIcon type={task.type} className="h-2.5 w-2.5" />
+                                {task.type}
+                              </span>
+                            </div>
                           </div>
 
                           {/* Card Title & Description */}
@@ -936,30 +1067,28 @@ export default function App() {
                           </div>
 
                           {/* M9 Context Indicator Pill on Card */}
-                          {task.context && (
-                            <div className="mb-2.5 flex items-center justify-between gap-1.5 rounded border border-zinc-800/90 bg-zinc-900/70 px-2 py-1">
-                              <span
-                                style={{
-                                  color: THEME.brandAccent,
-                                  fontFamily: "'JetBrains Mono', monospace",
-                                }}
-                                className="truncate text-[10px] font-medium"
-                              >
-                                AI: {task.contextTool || 'Claude'}
-                              </span>
-                              <span
-                                style={{
-                                  color: THEME.textMuted,
-                                  fontFamily: "'JetBrains Mono', monospace",
-                                }}
-                                className="shrink-0 text-[10px]"
-                              >
-                                {formatRelativeTime(task.contextUpdatedAt)}
-                              </span>
-                            </div>
-                          )}
+                          <div className="mb-2.5 flex items-center justify-between gap-1.5 rounded border border-zinc-800/90 bg-zinc-900/70 px-2 py-1">
+                            <span
+                              style={{
+                                color: THEME.brandAccent,
+                                fontFamily: "'JetBrains Mono', monospace",
+                              }}
+                              className="truncate text-[10px] font-medium"
+                            >
+                              AI: {task.contextTool || 'Claude'}
+                            </span>
+                            <span
+                              style={{
+                                color: THEME.textMuted,
+                                fontFamily: "'JetBrains Mono', monospace",
+                              }}
+                              className="shrink-0 text-[10px]"
+                            >
+                              {formatRelativeTime(task.contextUpdatedAt)}
+                            </span>
+                          </div>
 
-                          {/* M7 & M8 Footer: Assignee Avatar + Urgency-Tinted Due Date Pill */}
+                          {/* Card Footer (FR-04, FR-07, DR-03, DR-04, NFR-05) */}
                           <div className="space-y-2 border-t border-zinc-800/80 pt-2.5">
                             <div className="flex items-center justify-between gap-1">
                               <div className="flex min-w-0 items-center gap-1.5">
@@ -1005,9 +1134,9 @@ export default function App() {
                               </span>
                             </div>
 
-                            {/* Creator label (FR-04) + Quick "Hand off to..." dropdown */}
+                            {/* Creator label + Hand off dropdown (FR-04) + M10 Copy Context button (FR-07) */}
                             <div
-                              className="flex items-center justify-between gap-2 pt-0.5"
+                              className="flex items-center justify-between gap-1.5 pt-0.5"
                               onClick={(e) => e.stopPropagation()}
                             >
                               <span
@@ -1030,7 +1159,7 @@ export default function App() {
                                   backgroundColor: THEME.surfacePage,
                                   color: THEME.textMuted,
                                 }}
-                                className="rounded border border-zinc-700 px-1.5 py-0.5 text-[11px] transition hover:border-cyan-400 hover:text-white focus:outline-none"
+                                className="rounded border border-zinc-700 px-1.5 py-0.5 text-[10px] transition hover:border-cyan-400 hover:text-white focus:outline-none"
                               >
                                 <option value="" disabled>
                                   Hand off to…
@@ -1056,7 +1185,7 @@ export default function App() {
         </main>
       </div>
 
-      {/* M5, M6, M7, M8 & M9 CRUD + Context Modal */}
+      {/* M5, M6, M7, M8, M9 & M10 CRUD + Context Modal */}
       {isModalOpen && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4"
@@ -1302,10 +1431,10 @@ export default function App() {
                 </div>
               </div>
 
-              {/* M9 Task Context Section (FR-06 & DR-04) */}
+              {/* M9 & M10 Task Context + Copy Context Section (FR-06, FR-07, DR-04, NFR-05) */}
               <div className="rounded-md border border-zinc-800 bg-zinc-900/60 p-3.5">
                 <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-                  <div className="flex items-center gap-2">
+                  <div>
                     <label
                       htmlFor="task-context-textarea"
                       style={{
@@ -1314,32 +1443,12 @@ export default function App() {
                       }}
                       className="text-[13px] font-semibold uppercase tracking-wide"
                     >
-                      Context (FR-06 · Prompt Briefing)
+                      Context
                     </label>
-                    <span
-                      style={{
-                        color: THEME.textMuted,
-                        fontFamily: "'JetBrains Mono', monospace",
-                      }}
-                      className="text-[11px]"
-                    >
-                      · last updated {formatRelativeTime(formData.contextUpdatedAt)}
-                    </span>
                   </div>
 
-                  {/* M9 Stretch: Toggle Live Markdown Preview */}
-                  <div className="flex items-center gap-1.5">
-                    <button
-                      type="button"
-                      onClick={() =>
-                        handleContextChange(DEFAULT_CONTEXT_TEMPLATE)
-                      }
-                      style={{ color: THEME.textMuted }}
-                      className="rounded border border-zinc-700 px-2 py-0.5 text-[11px] hover:border-zinc-500 hover:text-white"
-                      title="Reset to default Context template"
-                    >
-                      Reset Template
-                    </button>
+                  {/* M9 Preview + M10 Copy Context Button with Popover Toast (Slide 13) */}
+                  <div className="relative flex items-center gap-2">
                     <button
                       type="button"
                       onClick={() => setShowContextPreview((p) => !p)}
@@ -1354,10 +1463,52 @@ export default function App() {
                           ? `${THEME.brandAccent}66`
                           : '#3F3F46',
                       }}
-                      className="rounded border px-2.5 py-0.5 text-[11px] font-medium transition"
+                      className="rounded border px-2.5 py-1 text-[11px] font-medium transition"
                     >
-                      {showContextPreview ? 'Split Preview: ON' : 'Live Preview'}
+                      {showContextPreview ? 'Preview: ON' : 'Live Preview'}
                     </button>
+
+                    {/* M10 Copy Context Hero Button inside Modal (FR-07 & NFR-05) */}
+                    <div className="relative">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          handleCopyContext(
+                            {
+                              id: editingTask?.id || 'new-task',
+                              ...formData,
+                            },
+                            'modal-context'
+                          )
+                        }
+                        style={{
+                          backgroundColor: isModalCopied
+                            ? THEME.dueSafe
+                            : THEME.brandAccent,
+                          color: THEME.surfacePage,
+                          fontFamily: "'JetBrains Mono', monospace",
+                        }}
+                        className="inline-flex items-center gap-1.5 rounded px-3 py-1 text-[11px] font-bold shadow-md transition hover:opacity-90 focus:outline-none"
+                      >
+                        <span>Copy Context</span>
+                        <CopyIcon copied={isModalCopied} className="h-3.5 w-3.5" />
+                      </button>
+
+                      {/* Floating "Copied to clipboard!" tooltip right below the button (Slide 13) */}
+                      {isModalCopied && (
+                        <div
+                          style={{
+                            backgroundColor: THEME.surfacePage,
+                            borderColor: THEME.dueSafe,
+                            color: THEME.dueSafe,
+                            fontFamily: "'JetBrains Mono', monospace",
+                          }}
+                          className="absolute right-0 top-full mt-1.5 z-20 whitespace-nowrap rounded border px-2.5 py-1 text-[11px] font-semibold shadow-lg"
+                        >
+                          Copied to clipboard!
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </div>
 
@@ -1402,7 +1553,19 @@ export default function App() {
                   )}
                 </div>
 
-                {/* AI Tool Dropdown (DR-04 contextTool) + ISO Timestamp */}
+                {/* Last Updated Timestamp Line (Slide 12 & 13) */}
+                <div
+                  style={{
+                    color: THEME.textMuted,
+                    fontFamily: "'JetBrains Mono', monospace",
+                  }}
+                  className="mt-1.5 text-[11px]"
+                >
+                  last updated {formatRelativeTime(formData.contextUpdatedAt)}{' '}
+                  (contextUpdatedAt: {formData.contextUpdatedAt || '—'})
+                </div>
+
+                {/* AI Tool Dropdown (DR-04 contextTool) */}
                 <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
                   <div className="flex items-center gap-2">
                     <label
@@ -1431,15 +1594,14 @@ export default function App() {
                     </select>
                   </div>
 
-                  <span
-                    style={{
-                      color: THEME.textMuted,
-                      fontFamily: "'JetBrains Mono', monospace",
-                    }}
-                    className="text-[10px]"
+                  <button
+                    type="button"
+                    onClick={() => handleContextChange(DEFAULT_CONTEXT_TEMPLATE)}
+                    style={{ color: THEME.textMuted }}
+                    className="rounded border border-zinc-700 px-2 py-0.5 text-[11px] hover:border-zinc-500 hover:text-white"
                   >
-                    contextUpdatedAt: {formData.contextUpdatedAt || '—'}
-                  </span>
+                    Reset Template
+                  </button>
                 </div>
               </div>
 
