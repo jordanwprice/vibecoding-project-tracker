@@ -11,7 +11,7 @@ export const STAGES = [
 // DR-03: Assignee constrained to 3 team members from PRD §8
 export const TEAM = ['Jordan', 'Teammate B', 'Teammate C'];
 
-// DESIGN.md §2 Color Palette Constants (ensures colors work even without index.css changes)
+// DESIGN.md §2 Color Palette Constants
 export const THEME = {
   brandPrimary: '#4F46E5',
   brandAccent:  '#22D3EE',
@@ -27,7 +27,23 @@ export const THEME = {
   dueNeutral:   '#71717A',
 };
 
-// M6 tag-style (FR-03 & NFR-03): Distinct SVG icons + color tokens for Feature vs Bug
+// M7 task-owner: Helper to get initials & distinct avatar color for each teammate
+export function getInitials(name = '') {
+  return name
+    .split(' ')
+    .map((part) => part[0])
+    .join('')
+    .toUpperCase()
+    .slice(0, 2);
+}
+
+export function getAvatarColor(name) {
+  if (name === TEAM[0]) return THEME.brandPrimary; // #4F46E5
+  if (name === TEAM[1]) return THEME.brandAccent;  // #22D3EE
+  return '#A855F7';                                // Purple for Teammate C
+}
+
+// M6 tag-style (FR-03 & NFR-03): Distinct SVG icons for Feature vs Bug
 export function TypeIcon({ type, className = 'w-3.5 h-3.5' }) {
   if (type === 'bug') {
     return (
@@ -109,7 +125,7 @@ export function toDisplayDate(yyyymmdd) {
   return `${dd}-${mm}-${yyyy}`;
 }
 
-// DR-06: mockTasks array pre-populated using DR-01 (UUID) & DR-02 ("DD-MM-YYYY")
+// DR-06: mockTasks array pre-populated using DR-01 (UUID), DR-02 ("DD-MM-YYYY"), DR-03 & FR-04 (assignee & creator)
 export const mockTasks = [
   {
     id: 'a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d',
@@ -117,6 +133,7 @@ export const mockTasks = [
     description: 'Configure dark mode surface, brand, type, and due-state hex tokens.',
     type: 'feature',
     status: 'done',
+    creator: TEAM[0],
     assignee: TEAM[0],
     createdDate: '27-10-2026',
     dueDate: '27-10-2026',
@@ -127,6 +144,7 @@ export const mockTasks = [
     description: 'Render To Do, In Progress, Review, and Done columns with mockTasks.',
     type: 'feature',
     status: 'in-progress',
+    creator: TEAM[0],
     assignee: TEAM[0],
     createdDate: '27-10-2026',
     dueDate: '28-10-2026',
@@ -137,6 +155,7 @@ export const mockTasks = [
     description: 'Ensure all four columns fit cleanly on desktop without horizontal scroll.',
     type: 'bug',
     status: 'review',
+    creator: TEAM[0],
     assignee: TEAM[1],
     createdDate: '27-10-2026',
     dueDate: '29-10-2026',
@@ -147,6 +166,7 @@ export const mockTasks = [
     description: 'Create modal form to add, edit, and delete tasks in localStorage.',
     type: 'feature',
     status: 'todo',
+    creator: TEAM[1],
     assignee: TEAM[2],
     createdDate: '27-10-2026',
     dueDate: '30-10-2026',
@@ -194,6 +214,19 @@ export default function App() {
   // M4 data-model
   const [tasks, setTasks] = useLocalStorage('vibetracker.tasks', mockTasks);
 
+  // M7 task-owner toast state (DESIGN.md §5 & §7: 200ms fade toast)
+  const [toastMessage, setToastMessage] = useState(null);
+
+  const triggerToast = (msg) => {
+    setToastMessage(msg);
+  };
+
+  useEffect(() => {
+    if (!toastMessage) return;
+    const timer = setTimeout(() => setToastMessage(null), 2600);
+    return () => clearTimeout(timer);
+  }, [toastMessage]);
+
   // M5 crud-modal state
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingTask, setEditingTask] = useState(null);
@@ -202,6 +235,7 @@ export default function App() {
     description: '',
     type: 'feature',
     status: 'todo',
+    creator: TEAM[0],
     assignee: TEAM[0],
     dueDate: '',
     createdDate: '',
@@ -214,6 +248,7 @@ export default function App() {
       description: '',
       type: 'feature',
       status: 'todo',
+      creator: TEAM[0],
       assignee: TEAM[0],
       dueDate: toInputDate(getTodayDDMMYYYY()),
       createdDate: getTodayDDMMYYYY(),
@@ -228,6 +263,7 @@ export default function App() {
       description: task.description || '',
       type: task.type,
       status: task.status,
+      creator: task.creator || task.assignee || TEAM[0],
       assignee: task.assignee,
       dueDate: toInputDate(task.dueDate),
       createdDate: task.createdDate || getTodayDDMMYYYY(),
@@ -240,6 +276,16 @@ export default function App() {
     setEditingTask(null);
   };
 
+  // M7 task-owner (FR-04): Direct "Hand off to..." reassignment + confirmation toast
+  const handleHandoffTask = (taskId, newAssignee) => {
+    if (!newAssignee) return;
+    setTasks((prev) =>
+      prev.map((t) => (t.id === taskId ? { ...t, assignee: newAssignee } : t))
+    );
+    // DESIGN.md §5 exact handoff toast microcopy: "Assigned to {name}."
+    triggerToast(`Assigned to ${newAssignee}.`);
+  };
+
   const handleSaveTask = (e) => {
     e.preventDefault();
     if (!formData.title.trim()) return;
@@ -247,6 +293,7 @@ export default function App() {
     const formattedDueDate = formData.dueDate ? toDisplayDate(formData.dueDate) : '';
 
     if (editingTask) {
+      const assigneeChanged = editingTask.assignee !== formData.assignee;
       setTasks((prev) =>
         prev.map((t) =>
           t.id === editingTask.id
@@ -256,12 +303,16 @@ export default function App() {
                 description: formData.description.trim(),
                 type: formData.type,
                 status: formData.status,
+                creator: formData.creator || t.creator || TEAM[0],
                 assignee: formData.assignee,
                 dueDate: formattedDueDate,
               }
             : t
         )
       );
+      if (assigneeChanged) {
+        triggerToast(`Assigned to ${formData.assignee}.`);
+      }
     } else {
       const newTask = {
         id: generateId(),
@@ -269,11 +320,13 @@ export default function App() {
         description: formData.description.trim(),
         type: formData.type,
         status: formData.status,
+        creator: formData.creator || TEAM[0],
         assignee: formData.assignee,
         createdDate: formData.createdDate || getTodayDDMMYYYY(),
         dueDate: formattedDueDate,
       };
       setTasks((prev) => [...prev, newTask]);
+      triggerToast(`Assigned to ${formData.assignee}.`);
     }
 
     handleCloseModal();
@@ -300,9 +353,29 @@ export default function App() {
       }}
       className="min-h-screen w-full overflow-x-hidden px-4 py-5"
     >
+      {/* M7 Toast Notification (FR-04 & DESIGN.md §5 / §7: 200ms fade) */}
+      {toastMessage && (
+        <div
+          role="status"
+          aria-live="polite"
+          style={{
+            backgroundColor: THEME.surfaceCard,
+            borderColor: THEME.brandAccent,
+            color: THEME.textPrimary,
+          }}
+          className="fixed bottom-5 right-5 z-50 flex items-center gap-2.5 rounded-md border px-4 py-2.5 text-[13px] font-medium shadow-2xl transition-opacity duration-200"
+        >
+          <span
+            style={{ backgroundColor: THEME.brandAccent }}
+            className="h-2 w-2 rounded-full"
+          />
+          <span>{toastMessage}</span>
+        </div>
+      )}
+
       <div className="mx-auto max-w-[1280px]">
         {/* Header (DESIGN.md §6 wordmark style + M5 "+ New Task" button) */}
-        <header className="mb-6 flex items-end justify-between border-b border-zinc-800 pb-4">
+        <header className="mb-4 flex items-end justify-between border-b border-zinc-800 pb-4">
           <div>
             <h1
               style={{
@@ -327,6 +400,64 @@ export default function App() {
             + New Task
           </button>
         </header>
+
+        {/* M7 task-owner Stretch Strip: Shows what each teammate is currently driving */}
+        <section
+          aria-label="Team Active Drivers"
+          className="mb-5 grid grid-cols-3 gap-3"
+        >
+          {TEAM.map((member) => {
+            const drivingTasks = tasks.filter(
+              (t) => t.assignee === member && t.status === 'in-progress'
+            );
+            const totalAssigned = tasks.filter((t) => t.assignee === member).length;
+            const avatarBg = getAvatarColor(member);
+
+            return (
+              <div
+                key={member}
+                style={{ backgroundColor: THEME.surfaceCard }}
+                className="flex items-center justify-between rounded-md border border-zinc-800 px-3 py-2"
+              >
+                <div className="flex min-w-0 items-center gap-2.5">
+                  <span
+                    style={{
+                      backgroundColor: `${avatarBg}25`,
+                      color: avatarBg,
+                      borderColor: `${avatarBg}66`,
+                      fontFamily: "'JetBrains Mono', monospace",
+                    }}
+                    className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border text-[11px] font-semibold"
+                  >
+                    {getInitials(member)}
+                  </span>
+                  <div className="min-w-0">
+                    <p className="truncate text-[13px] font-medium">
+                      {member}
+                    </p>
+                    <p
+                      style={{ color: THEME.textMuted }}
+                      className="truncate text-[11px]"
+                    >
+                      {drivingTasks.length > 0
+                        ? `Driving: ${drivingTasks[0].title}`
+                        : 'No task in progress'}
+                    </p>
+                  </div>
+                </div>
+                <span
+                  style={{
+                    color: THEME.textMuted,
+                    fontFamily: "'JetBrains Mono', monospace",
+                  }}
+                  className="ml-2 shrink-0 rounded bg-zinc-900 px-2 py-0.5 text-[11px] border border-zinc-800"
+                >
+                  {totalAssigned} {totalAssigned === 1 ? 'task' : 'tasks'}
+                </span>
+              </div>
+            );
+          })}
+        </section>
 
         {/* TODO M11 anchors: Anchor Banner (FR-08) goes here */}
 
@@ -373,6 +504,8 @@ export default function App() {
                     columnTasks.map((task) => {
                       const isBug = task.type === 'bug';
                       const accentHex = isBug ? THEME.typeBug : THEME.typeFeature;
+                      const avatarBg = getAvatarColor(task.assignee);
+                      const creatorName = task.creator || task.assignee || TEAM[0];
 
                       return (
                         <article
@@ -384,14 +517,14 @@ export default function App() {
                           }}
                           className="group relative flex cursor-pointer flex-col justify-between overflow-hidden rounded-md border p-3 pl-4 transition hover:brightness-110"
                         >
-                          {/* M6 tag-style (DESIGN.md §2): Dedicated left accent stripe for Feature (#38BDF8) vs Bug (#F472B6) */}
+                          {/* M6 tag-style: Left accent stripe */}
                           <div
                             style={{ backgroundColor: accentHex }}
                             className="absolute inset-y-0 left-0 w-1.5"
                             aria-hidden="true"
                           />
 
-                          {/* Card Top: Shortened UUID + M6 Type Badge & Corner Icon (FR-03 & NFR-03) */}
+                          {/* Card Top: Shortened UUID + M6 Type Badge */}
                           <div className="mb-2 flex items-center justify-between gap-2">
                             <span
                               title={task.id}
@@ -433,25 +566,83 @@ export default function App() {
                             )}
                           </div>
 
-                          {/* Card Footer: Assignee + Due Date */}
-                          <div
-                            style={{ color: THEME.textMuted }}
-                            className="flex items-center justify-between border-t border-zinc-800/80 pt-2 text-[12px]"
-                          >
-                            <span
-                              style={{ color: THEME.textPrimary }}
-                              className="truncate font-medium"
+                          {/* M7 task-owner (FR-04 & DR-03): Assignee Avatar, Creator Info, Due Date & "Hand off to..." */}
+                          <div className="border-t border-zinc-800/80 pt-2.5 space-y-2">
+                            <div className="flex items-center justify-between gap-1">
+                              {/* Prominent Assignee Initials Avatar + Name */}
+                              <div className="flex min-w-0 items-center gap-1.5">
+                                <span
+                                  style={{
+                                    backgroundColor: `${avatarBg}25`,
+                                    color: avatarBg,
+                                    borderColor: `${avatarBg}66`,
+                                    fontFamily: "'JetBrains Mono', monospace",
+                                  }}
+                                  className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full border text-[10px] font-semibold"
+                                  title={`Assigned to ${task.assignee}`}
+                                >
+                                  {getInitials(task.assignee)}
+                                </span>
+                                <span
+                                  style={{ color: THEME.textPrimary }}
+                                  className="truncate text-[12px] font-medium"
+                                >
+                                  {task.assignee}
+                                </span>
+                              </div>
+
+                              {task.dueDate && (
+                                <span
+                                  style={{
+                                    color: THEME.textMuted,
+                                    fontFamily: "'JetBrains Mono', monospace",
+                                  }}
+                                  className="shrink-0 text-[10px]"
+                                >
+                                  {task.dueDate}
+                                </span>
+                              )}
+                            </div>
+
+                            {/* Creator label (FR-04) + Quick "Hand off to..." dropdown */}
+                            <div
+                              className="flex items-center justify-between gap-2 pt-0.5"
+                              onClick={(e) => e.stopPropagation()}
                             >
-                              {task.assignee}
-                            </span>
-                            {task.dueDate && (
                               <span
-                                style={{ fontFamily: "'JetBrains Mono', monospace" }}
-                                className="text-[11px]"
+                                style={{ color: THEME.textMuted }}
+                                className="truncate text-[10px]"
+                                title={`Created by ${creatorName}`}
                               >
-                                Due: {task.dueDate}
+                                By: {creatorName}
                               </span>
-                            )}
+
+                              <select
+                                aria-label={`Hand off ${task.title} to teammate`}
+                                value=""
+                                onChange={(e) => {
+                                  if (e.target.value) {
+                                    handleHandoffTask(task.id, e.target.value);
+                                  }
+                                }}
+                                style={{
+                                  backgroundColor: THEME.surfacePage,
+                                  color: THEME.textMuted,
+                                }}
+                                className="rounded border border-zinc-700 px-1.5 py-0.5 text-[11px] transition hover:border-cyan-400 hover:text-white focus:outline-none"
+                              >
+                                <option value="" disabled>
+                                  Hand off to…
+                                </option>
+                                {TEAM.filter((m) => m !== task.assignee).map(
+                                  (member) => (
+                                    <option key={member} value={member}>
+                                      {member}
+                                    </option>
+                                  )
+                                )}
+                              </select>
+                            </div>
                           </div>
                         </article>
                       );
@@ -464,7 +655,7 @@ export default function App() {
         </main>
       </div>
 
-      {/* M5 & M6 CRUD Modal (with consistent Feature/Bug tag-style in modal) */}
+      {/* M5, M6 & M7 CRUD Modal */}
       {isModalOpen && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4"
@@ -494,7 +685,6 @@ export default function App() {
                 >
                   {editingTask ? 'Task Details' : 'New Task'}
                 </h2>
-                {/* M6 live badge in modal header */}
                 <span
                   style={{
                     backgroundColor: `${modalAccentColor}20`,
@@ -521,15 +711,16 @@ export default function App() {
             </div>
 
             {editingTask && (
-              <p
+              <div
                 style={{
                   color: THEME.textMuted,
                   fontFamily: "'JetBrains Mono', monospace",
                 }}
-                className="mb-3 text-[11px]"
+                className="mb-3 flex items-center justify-between text-[11px]"
               >
-                ID: {editingTask.id}
-              </p>
+                <span>ID: {editingTask.id}</span>
+                <span>Created by: {formData.creator}</span>
+              </div>
             )}
 
             <form onSubmit={handleSaveTask} className="space-y-4">
@@ -633,25 +824,25 @@ export default function App() {
                 </div>
               </div>
 
-              {/* Assignee (DR-03) & Due Date (DR-02) */}
-              <div className="grid grid-cols-2 gap-3">
+              {/* M7: Task Creator (FR-04), Assignee / Hand off to (DR-03) & Due Date (DR-02) */}
+              <div className="grid grid-cols-3 gap-3">
                 <div>
                   <label
                     style={{ color: THEME.textMuted }}
                     className="mb-1 block text-[12px] font-medium"
                   >
-                    Assignee
+                    Creator (FR-04)
                   </label>
                   <select
-                    value={formData.assignee}
+                    value={formData.creator}
                     onChange={(e) =>
-                      setFormData({ ...formData, assignee: e.target.value })
+                      setFormData({ ...formData, creator: e.target.value })
                     }
                     style={{
                       backgroundColor: THEME.surfacePage,
                       color: THEME.textPrimary,
                     }}
-                    className="w-full rounded-md border border-zinc-700 px-3 py-2 text-[14px] focus:border-indigo-500 focus:outline-none"
+                    className="w-full rounded-md border border-zinc-700 px-2.5 py-2 text-[13px] focus:border-indigo-500 focus:outline-none"
                   >
                     {TEAM.map((member) => (
                       <option key={member} value={member}>
@@ -666,7 +857,33 @@ export default function App() {
                     style={{ color: THEME.textMuted }}
                     className="mb-1 block text-[12px] font-medium"
                   >
-                    Due Date (DD-MM-YYYY)
+                    Hand off / Assignee
+                  </label>
+                  <select
+                    value={formData.assignee}
+                    onChange={(e) =>
+                      setFormData({ ...formData, assignee: e.target.value })
+                    }
+                    style={{
+                      backgroundColor: THEME.surfacePage,
+                      color: THEME.textPrimary,
+                    }}
+                    className="w-full rounded-md border border-zinc-700 px-2.5 py-2 text-[13px] focus:border-indigo-500 focus:outline-none"
+                  >
+                    {TEAM.map((member) => (
+                      <option key={member} value={member}>
+                        {member}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label
+                    style={{ color: THEME.textMuted }}
+                    className="mb-1 block text-[12px] font-medium"
+                  >
+                    Due Date
                   </label>
                   <input
                     type="date"
@@ -679,7 +896,7 @@ export default function App() {
                       color: THEME.textPrimary,
                       fontFamily: "'JetBrains Mono', monospace",
                     }}
-                    className="w-full rounded-md border border-zinc-700 px-3 py-2 text-[13px] focus:border-indigo-500 focus:outline-none"
+                    className="w-full rounded-md border border-zinc-700 px-2.5 py-2 text-[12px] focus:border-indigo-500 focus:outline-none"
                   />
                 </div>
               </div>
