@@ -928,11 +928,8 @@ export default function App() {
               }}
               className="text-[24px] font-semibold"
             >
-              Vibecoding Project Tracker
+              Kanboard Vibe
             </h1>
-            <p style={{ color: THEME.textMuted }} className="text-[12px]">
-              Team JORDAN · All you need is Jordan
-            </p>
           </div>
 
           <div className="flex flex-wrap items-center gap-4">
