@@ -21,10 +21,10 @@ export const THEME = {
   textMuted:    '#A1A1AA',
   typeFeature:  '#38BDF8',
   typeBug:      '#F472B6',
-  dueSafe:      '#10B981',
-  dueWarning:   '#FACC15',
-  dueOverdue:   '#FF2A54',
-  dueNeutral:   '#71717A',
+  dueSafe:      '#10B981', // More than 2 days out
+  dueWarning:   '#FACC15', // Less than 24 hours
+  dueOverdue:   '#FF2A54', // Past due
+  dueNeutral:   '#71717A', // Done (overrides date)
 };
 
 // M7 task-owner: Helper to get initials & distinct avatar color for each teammate
@@ -38,9 +38,9 @@ export function getInitials(name = '') {
 }
 
 export function getAvatarColor(name) {
-  if (name === TEAM[0]) return THEME.brandPrimary; // #4F46E5
-  if (name === TEAM[1]) return THEME.brandAccent;  // #22D3EE
-  return '#A855F7';                                // Purple for Teammate C
+  if (name === TEAM[0]) return THEME.brandPrimary;
+  if (name === TEAM[1]) return THEME.brandAccent;
+  return '#A855F7';
 }
 
 // M6 tag-style (FR-03 & NFR-03): Distinct SVG icons for Feature vs Bug
@@ -99,12 +99,21 @@ export function generateId() {
 }
 
 // Helpers for DR-02: Convert between "DD-MM-YYYY" (stored) and "YYYY-MM-DD" (HTML date input)
-export function getTodayDDMMYYYY() {
-  const today = new Date();
-  const dd = String(today.getDate()).padStart(2, '0');
-  const mm = String(today.getMonth() + 1).padStart(2, '0');
-  const yyyy = today.getFullYear();
+export function formatDateDDMMYYYY(dateObj) {
+  const dd = String(dateObj.getDate()).padStart(2, '0');
+  const mm = String(dateObj.getMonth() + 1).padStart(2, '0');
+  const yyyy = dateObj.getFullYear();
   return `${dd}-${mm}-${yyyy}`;
+}
+
+export function getTodayDDMMYYYY() {
+  return formatDateDDMMYYYY(new Date());
+}
+
+export function getOffsetDateDDMMYYYY(daysOffset) {
+  const d = new Date();
+  d.setDate(d.getDate() + daysOffset);
+  return formatDateDDMMYYYY(d);
 }
 
 export function toInputDate(ddmmyyyy) {
@@ -125,7 +134,75 @@ export function toDisplayDate(yyyymmdd) {
   return `${dd}-${mm}-${yyyy}`;
 }
 
-// DR-06: mockTasks array pre-populated using DR-01 (UUID), DR-02 ("DD-MM-YYYY"), DR-03 & FR-04 (assignee & creator)
+// M8 due-tint (FR-05, NFR-03, DESIGN.md §2 & §4): Calculate urgency state from DD-MM-YYYY dueDate & status
+export function getDueUrgency(task) {
+  // Done tasks always look neutral, even if previously overdue
+  if (task.status === 'done') {
+    return {
+      key: 'neutral',
+      label: 'Done',
+      icon: '✓',
+      color: THEME.dueNeutral,
+      isOverdue: false,
+    };
+  }
+
+  if (!task.dueDate) {
+    return {
+      key: 'safe',
+      label: 'No Due Date',
+      icon: '●',
+      color: THEME.dueSafe,
+      isOverdue: false,
+    };
+  }
+
+  const parts = task.dueDate.split('-');
+  let dueTime;
+  if (parts.length === 3) {
+    const [p0, p1, p2] = parts.map(Number);
+    // Support both DD-MM-YYYY and YYYY-MM-DD gracefully
+    const year = parts[0].length === 4 ? p0 : p2;
+    const month = p1 - 1;
+    const day = parts[0].length === 4 ? p2 : p0;
+    dueTime = new Date(year, month, day, 23, 59, 59, 999).getTime();
+  } else {
+    dueTime = new Date(task.dueDate).getTime();
+  }
+
+  const now = Date.now();
+  const hoursRemaining = (dueTime - now) / (1000 * 60 * 60);
+
+  if (hoursRemaining < 0) {
+    return {
+      key: 'overdue',
+      label: 'Past Due',
+      icon: '⚠',
+      color: THEME.dueOverdue,
+      isOverdue: true,
+    };
+  }
+
+  if (hoursRemaining <= 24) {
+    return {
+      key: 'warning',
+      label: '< 24h Left',
+      icon: '⏳',
+      color: THEME.dueWarning,
+      isOverdue: false,
+    };
+  }
+
+  return {
+    key: 'safe',
+    label: '> 2 Days',
+    icon: '●',
+    color: THEME.dueSafe,
+    isOverdue: false,
+  };
+}
+
+// DR-06: mockTasks pre-populated to showcase all 4 M8 urgency states on load
 export const mockTasks = [
   {
     id: 'a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d',
@@ -135,8 +212,8 @@ export const mockTasks = [
     status: 'done',
     creator: TEAM[0],
     assignee: TEAM[0],
-    createdDate: '27-10-2026',
-    dueDate: '27-10-2026',
+    createdDate: getTodayDDMMYYYY(),
+    dueDate: getOffsetDateDDMMYYYY(-2), // Done overrides past due -> Neutral (#71717A)
   },
   {
     id: 'b2c3d4e5-f6a7-4b8c-9d0e-1f2a3b4c5d6e',
@@ -146,8 +223,8 @@ export const mockTasks = [
     status: 'in-progress',
     creator: TEAM[0],
     assignee: TEAM[0],
-    createdDate: '27-10-2026',
-    dueDate: '28-10-2026',
+    createdDate: getTodayDDMMYYYY(),
+    dueDate: getTodayDDMMYYYY(), // Due today (< 24h) -> Warning (#FACC15)
   },
   {
     id: 'c3d4e5f6-a7b8-4c9d-0e1f-2a3b4c5d6e7f',
@@ -157,8 +234,8 @@ export const mockTasks = [
     status: 'review',
     creator: TEAM[0],
     assignee: TEAM[1],
-    createdDate: '27-10-2026',
-    dueDate: '29-10-2026',
+    createdDate: getOffsetDateDDMMYYYY(-3),
+    dueDate: getOffsetDateDDMMYYYY(-1), // Yesterday -> Past Due (#FF2A54)
   },
   {
     id: 'd4e5f6a7-b8c9-4d0e-1f2a-3b4c5d6e7f8a',
@@ -168,8 +245,8 @@ export const mockTasks = [
     status: 'todo',
     creator: TEAM[1],
     assignee: TEAM[2],
-    createdDate: '27-10-2026',
-    dueDate: '30-10-2026',
+    createdDate: getTodayDDMMYYYY(),
+    dueDate: getOffsetDateDDMMYYYY(4), // 4 days out -> Safe (#10B981)
   },
 ];
 
@@ -214,7 +291,7 @@ export default function App() {
   // M4 data-model
   const [tasks, setTasks] = useLocalStorage('vibetracker.tasks', mockTasks);
 
-  // M7 task-owner toast state (DESIGN.md §5 & §7: 200ms fade toast)
+  // M7 task-owner toast state
   const [toastMessage, setToastMessage] = useState(null);
 
   const triggerToast = (msg) => {
@@ -250,7 +327,7 @@ export default function App() {
       status: 'todo',
       creator: TEAM[0],
       assignee: TEAM[0],
-      dueDate: toInputDate(getTodayDDMMYYYY()),
+      dueDate: toInputDate(getOffsetDateDDMMYYYY(3)),
       createdDate: getTodayDDMMYYYY(),
     });
     setIsModalOpen(true);
@@ -282,7 +359,6 @@ export default function App() {
     setTasks((prev) =>
       prev.map((t) => (t.id === taskId ? { ...t, assignee: newAssignee } : t))
     );
-    // DESIGN.md §5 exact handoff toast microcopy: "Assigned to {name}."
     triggerToast(`Assigned to ${newAssignee}.`);
   };
 
@@ -353,7 +429,7 @@ export default function App() {
       }}
       className="min-h-screen w-full overflow-x-hidden px-4 py-5"
     >
-      {/* M7 Toast Notification (FR-04 & DESIGN.md §5 / §7: 200ms fade) */}
+      {/* M7 Toast Notification */}
       {toastMessage && (
         <div
           role="status"
@@ -374,8 +450,8 @@ export default function App() {
       )}
 
       <div className="mx-auto max-w-[1280px]">
-        {/* Header (DESIGN.md §6 wordmark style + M5 "+ New Task" button) */}
-        <header className="mb-4 flex items-end justify-between border-b border-zinc-800 pb-4">
+        {/* Header with M8 Task Urgency Legend */}
+        <header className="mb-4 flex flex-wrap items-center justify-between gap-4 border-b border-zinc-800 pb-4">
           <div>
             <h1
               style={{
@@ -391,17 +467,59 @@ export default function App() {
             </p>
           </div>
 
-          <button
-            type="button"
-            onClick={handleOpenNewModal}
-            style={{ backgroundColor: THEME.brandPrimary, color: THEME.textPrimary }}
-            className="rounded-md px-4 py-2 text-[14px] font-medium transition hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-          >
-            + New Task
-          </button>
+          <div className="flex flex-wrap items-center gap-4">
+            {/* M8 due-tint Legend (FR-05 & NFR-03) */}
+            <div
+              style={{
+                backgroundColor: THEME.surfaceCard,
+                color: THEME.textMuted,
+                fontFamily: "'JetBrains Mono', monospace",
+              }}
+              className="flex items-center gap-3 rounded-md border border-zinc-800 px-3 py-1.5 text-[11px]"
+            >
+              <span className="font-semibold text-zinc-300">Urgency:</span>
+              <span className="inline-flex items-center gap-1.5">
+                <span
+                  style={{ backgroundColor: THEME.dueSafe }}
+                  className="h-2.5 w-2.5 rounded-sm"
+                />
+                &gt; 2 Days
+              </span>
+              <span className="inline-flex items-center gap-1.5">
+                <span
+                  style={{ backgroundColor: THEME.dueWarning }}
+                  className="h-2.5 w-2.5 rounded-sm"
+                />
+                &lt; 24h
+              </span>
+              <span className="inline-flex items-center gap-1.5">
+                <span
+                  style={{ backgroundColor: THEME.dueOverdue }}
+                  className="h-2.5 w-2.5 rounded-sm"
+                />
+                Past Due
+              </span>
+              <span className="inline-flex items-center gap-1.5">
+                <span
+                  style={{ backgroundColor: THEME.dueNeutral }}
+                  className="h-2.5 w-2.5 rounded-sm"
+                />
+                Done
+              </span>
+            </div>
+
+            <button
+              type="button"
+              onClick={handleOpenNewModal}
+              style={{ backgroundColor: THEME.brandPrimary, color: THEME.textPrimary }}
+              className="rounded-md px-4 py-2 text-[14px] font-medium transition hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            >
+              + New Task
+            </button>
+          </div>
         </header>
 
-        {/* M7 task-owner Stretch Strip: Shows what each teammate is currently driving */}
+        {/* M7 task-owner Stretch Strip */}
         <section
           aria-label="Team Active Drivers"
           className="mb-5 grid grid-cols-3 gap-3"
@@ -507,19 +625,41 @@ export default function App() {
                       const avatarBg = getAvatarColor(task.assignee);
                       const creatorName = task.creator || task.assignee || TEAM[0];
 
+                      // M8 due-tint calculation (FR-05 & DESIGN.md §2 / §4)
+                      const urgency = getDueUrgency(task);
+
                       return (
                         <article
                           key={task.id}
                           onClick={() => handleOpenEditModal(task)}
                           style={{
                             backgroundColor: THEME.surfaceCard,
-                            borderColor: `${accentHex}55`,
+                            borderColor: urgency.color,
+                            boxShadow:
+                              urgency.key === 'overdue'
+                                ? `0 0 14px -2px ${THEME.dueOverdue}55`
+                                : urgency.key === 'warning'
+                                ? `0 0 12px -3px ${THEME.dueWarning}44`
+                                : 'none',
+                            opacity: task.status === 'done' ? 0.82 : 1,
                           }}
                           className="group relative flex cursor-pointer flex-col justify-between overflow-hidden rounded-md border p-3 pl-4 transition hover:brightness-110"
                         >
-                          {/* M6 tag-style: Left accent stripe */}
+                          {/* DESIGN.md §4: Bright red top stripe when overdue */}
+                          {urgency.isOverdue && (
+                            <div
+                              style={{ backgroundColor: THEME.dueOverdue }}
+                              className="absolute inset-x-0 top-0 h-1"
+                              aria-hidden="true"
+                            />
+                          )}
+
+                          {/* M6 tag-style: Left accent stripe for Feature (#38BDF8) vs Bug (#F472B6) */}
                           <div
-                            style={{ backgroundColor: accentHex }}
+                            style={{
+                              backgroundColor:
+                                task.status === 'done' ? THEME.dueNeutral : accentHex,
+                            }}
                             className="absolute inset-y-0 left-0 w-1.5"
                             aria-hidden="true"
                           />
@@ -553,7 +693,11 @@ export default function App() {
 
                           {/* Card Title & Description */}
                           <div className="mb-3">
-                            <h3 className="text-[14px] font-medium leading-snug">
+                            <h3
+                              className={`text-[14px] font-medium leading-snug ${
+                                task.status === 'done' ? 'line-through opacity-75' : ''
+                              }`}
+                            >
                               {task.title}
                             </h3>
                             {task.description && (
@@ -566,10 +710,9 @@ export default function App() {
                             )}
                           </div>
 
-                          {/* M7 task-owner (FR-04 & DR-03): Assignee Avatar, Creator Info, Due Date & "Hand off to..." */}
+                          {/* M7 & M8 Footer: Assignee Avatar + Urgency-Tinted Due Date Pill */}
                           <div className="border-t border-zinc-800/80 pt-2.5 space-y-2">
                             <div className="flex items-center justify-between gap-1">
-                              {/* Prominent Assignee Initials Avatar + Name */}
                               <div className="flex min-w-0 items-center gap-1.5">
                                 <span
                                   style={{
@@ -591,17 +734,26 @@ export default function App() {
                                 </span>
                               </div>
 
-                              {task.dueDate && (
-                                <span
-                                  style={{
-                                    color: THEME.textMuted,
-                                    fontFamily: "'JetBrains Mono', monospace",
-                                  }}
-                                  className="shrink-0 text-[10px]"
-                                >
-                                  {task.dueDate}
+                              {/* M8 due-tint badge (FR-05 & NFR-03 icon + status text + date) */}
+                              <span
+                                style={{
+                                  backgroundColor: `${urgency.color}20`,
+                                  color: urgency.color,
+                                  borderColor: `${urgency.color}66`,
+                                  fontFamily: "'JetBrains Mono', monospace",
+                                }}
+                                title={`Urgency: ${urgency.label}`}
+                                className="inline-flex shrink-0 items-center gap-1 rounded border px-1.5 py-0.5 text-[10px] font-medium"
+                              >
+                                <span aria-hidden="true">{urgency.icon}</span>
+                                <span>
+                                  {task.status === 'done'
+                                    ? 'Done'
+                                    : urgency.isOverdue
+                                    ? `Overdue · ${task.dueDate}`
+                                    : task.dueDate || urgency.label}
                                 </span>
-                              )}
+                              </span>
                             </div>
 
                             {/* Creator label (FR-04) + Quick "Hand off to..." dropdown */}
@@ -655,7 +807,7 @@ export default function App() {
         </main>
       </div>
 
-      {/* M5, M6 & M7 CRUD Modal */}
+      {/* M5, M6, M7 & M8 CRUD Modal */}
       {isModalOpen && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4"
@@ -901,7 +1053,7 @@ export default function App() {
                 </div>
               </div>
 
-              {/* Created Date Read-only Display (DR-02) */}
+              {/* Created Date & Live Urgency Preview (DR-02 & FR-05) */}
               <div
                 style={{
                   color: THEME.textMuted,
@@ -911,7 +1063,16 @@ export default function App() {
               >
                 <span>Created Date: {formData.createdDate}</span>
                 {formData.dueDate && (
-                  <span>Stored Due Date: {toDisplayDate(formData.dueDate)}</span>
+                  <span>
+                    Stored Due Date: {toDisplayDate(formData.dueDate)} (
+                    {
+                      getDueUrgency({
+                        status: formData.status,
+                        dueDate: toDisplayDate(formData.dueDate),
+                      }).label
+                    }
+                    )
+                  </span>
                 )}
               </div>
 
